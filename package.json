@@ -20,7 +20,8 @@
     "format": "prettier --write --ignore-unknown **/*",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "testw": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
-    "lint": "npx eslint src/* --fix"
+    "lint": "npx eslint src/* --fix",
+    "trace": "tsc && node build/src/main.js"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.16.4",
@@ -40,5 +41,9 @@
   },
   "engines": {
     "node": ">=18.14.0"
+  },
+  "dependencies": {
+    "mina-transaction-visualizer": "^0.1.0",
+    "snarkyjs": "^0.12.1"
   }
 }
