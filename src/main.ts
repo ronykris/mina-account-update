@@ -70,7 +70,7 @@ import { asciiVisualiser } from './asciiVisualiser.js';
       console.log(tracker.generateChangeSummary());
       //console.log(visualizer.visualizeAllSnapshots(tracker.getSnapshots()));
       console.log(visualizer.visualizeChangeSummary(tracker.getSnapshots()));
-
+      
 
     
 })()

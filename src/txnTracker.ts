@@ -104,7 +104,122 @@ class TransactionTreeTracker {
             removed: [],
             modified: []
         };
-
+    
+        const compareImportantFields = (oldBody: any, newBody: any): { field: string; before: any; after: any }[] => {
+            const modifications: { field: string; before: any; after: any }[] = [];
+            
+            // Debug logging
+            console.log('Comparing bodies:', JSON.stringify({
+                oldBody: oldBody || {},
+                newBody: newBody || {}
+            }, null, 2));
+    
+            // Compare update fields first
+            if (oldBody?.update || newBody?.update) {
+                const oldUpdate = oldBody?.update || {};
+                const newUpdate = newBody?.update || {};
+                
+                // Debug log update fields
+                console.log('Update fields:', JSON.stringify({
+                    oldUpdate,
+                    newUpdate
+                }, null, 2));
+    
+                // App State comparison with detailed logging
+                if (JSON.stringify(oldUpdate.appState) !== JSON.stringify(newUpdate.appState)) {
+                    console.log('App state change detected:', {
+                        old: oldUpdate.appState,
+                        new: newUpdate.appState
+                    });
+                    modifications.push({
+                        field: 'appState',
+                        before: oldUpdate.appState,
+                        after: newUpdate.appState
+                    });
+                }
+    
+                // Verification Key comparison
+                if (JSON.stringify(oldUpdate.verificationKey) !== JSON.stringify(newUpdate.verificationKey)) {
+                    modifications.push({
+                        field: 'verificationKey',
+                        before: oldUpdate.verificationKey,
+                        after: newUpdate.verificationKey
+                    });
+                }
+    
+                // Permissions comparison
+                if (JSON.stringify(oldUpdate.permissions) !== JSON.stringify(newUpdate.permissions)) {
+                    modifications.push({
+                        field: 'permissions',
+                        before: oldUpdate.permissions,
+                        after: newUpdate.permissions
+                    });
+                }
+            }
+    
+            // Other basic field comparisons
+            const basicFields = [
+                'tokenId',
+                'callData',
+                'callDepth',
+                'implicitAccountCreationFee',
+                'incrementNonce',
+                'useFullCommitment',
+                'mayUseToken'
+            ];
+    
+            basicFields.forEach(field => {
+                if (JSON.stringify(oldBody?.[field]) !== JSON.stringify(newBody?.[field])) {
+                    modifications.push({
+                        field,
+                        before: oldBody?.[field],
+                        after: newBody?.[field]
+                    });
+                }
+            });
+    
+            // Balance changes
+            if (oldBody?.balanceChange || newBody?.balanceChange) {
+                const oldBalance = oldBody?.balanceChange ? 
+                    `${oldBody.balanceChange.sgn === 'Negative' ? '-' : '+'}${oldBody.balanceChange.magnitude}` : null;
+                const newBalance = newBody?.balanceChange ? 
+                    `${newBody.balanceChange.sgn === 'Negative' ? '-' : '+'}${newBody.balanceChange.magnitude}` : null;
+                
+                if (oldBalance !== newBalance) {
+                    modifications.push({
+                        field: 'balance',
+                        before: oldBalance,
+                        after: newBalance
+                    });
+                }
+            }
+    
+            // Authorization changes
+            if (JSON.stringify(oldBody?.authorization) !== JSON.stringify(newBody?.authorization)) {
+                modifications.push({
+                    field: 'authorization',
+                    before: oldBody?.authorization,
+                    after: newBody?.authorization
+                });
+            }
+    
+            // Events and Actions
+            ['events', 'actions'].forEach(field => {
+                if (JSON.stringify(oldBody?.[field]) !== JSON.stringify(newBody?.[field])) {
+                    modifications.push({
+                        field,
+                        before: oldBody?.[field] || [],
+                        after: newBody?.[field] || []
+                    });
+                }
+            });
+    
+            // Debug log all modifications
+            console.log('Found modifications:', JSON.stringify(modifications, null, 2));
+    
+            return modifications;
+        };
+    
         const traverseTree = (
             oldNode: TreeNode | null,
             newNode: TreeNode,
@@ -114,39 +229,54 @@ class TransactionTreeTracker {
                 changes.added.push(newNode.path);
                 return;
             }
-
+    
+            // Check for modifications
             const modifications: { field: string; before: any; after: any }[] = [];
-
-            Object.keys(newNode.metadata).forEach(key => {
-                const oldValue = oldNode.metadata[key];
-                const newValue = newNode.metadata[key];
-                
-                if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-                    modifications.push({
-                        field: key,
-                        before: oldValue,
-                        after: newValue
-                    });
-                }
-            });
-
+    
+            // Check metadata changes
+            if (oldNode.metadata && newNode.metadata) {
+                // Check standard metadata changes
+                Object.keys(newNode.metadata).forEach(key => {
+                    const oldValue = oldNode.metadata[key];
+                    const newValue = newNode.metadata[key];
+                    
+                    if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+                        modifications.push({
+                            field: key,
+                            before: oldValue,
+                            after: newValue
+                        });
+                    }
+                });
+    
+                // NEW: Check important field changes
+                const fieldChanges = compareImportantFields(
+                    oldNode.metadata.body,
+                    newNode.metadata.body
+                );
+                modifications.push(...fieldChanges);
+            }
+    
             if (modifications.length > 0) {
                 changes.modified.push({
                     node: newNode.path,
                     changes: modifications
                 });
             }
-
-            const oldChildren = new Map(oldNode.children.map(child => [child.path, child]));
-            const newChildren = new Map(newNode.children.map(child => [child.path, child]));
-
-            oldNode.children.forEach(child => {
+    
+            // Recursively check children
+            const oldChildren = new Map(oldNode.children?.map(child => [child.path, child]) ?? []);
+            const newChildren = new Map(newNode.children?.map(child => [child.path, child]) ?? []);
+    
+            // Check for removed children
+            oldNode.children?.forEach(child => {
                 if (!newChildren.has(child.path)) {
                     changes.removed.push(child.path);
                 }
             });
-
-            newNode.children.forEach(child => {
+    
+            // Check for added children and modifications
+            newNode.children?.forEach(child => {
                 const oldChild = oldChildren.get(child.path);
                 if (!oldChild) {
                     changes.added.push(child.path);
@@ -155,7 +285,7 @@ class TransactionTreeTracker {
                 }
             });
         };
-
+    
         traverseTree(oldTree, newTree);
         return changes;
     }
@@ -225,6 +355,72 @@ class TransactionTreeTracker {
 
         return summary;
     }
+
+    private extractImportantFields(metadata: any): Record<string, any> {
+        const fields: Record<string, any> = {};
+        
+        try {
+            // Safely access body from metadata
+            const body = metadata?.body;
+            if (!body) return fields;
+
+            // Extract balance changes
+            if (body.balanceChange) {
+                fields.balance = `${body.balanceChange.sgn === 'Negative' ? '-' : '+'}${body.balanceChange.magnitude}`;
+            }
+
+            // Extract nonce changes
+            if ('incrementNonce' in body) {
+                fields.nonce = body.incrementNonce;
+            }
+
+            // Extract app state - with null checks
+            const appState = body.update?.appState;
+            if (appState) {
+                fields.appState = appState;
+            }
+
+            // Extract verification key - with null checks
+            const vkHash = body.update?.verificationKey?.hash;
+            if (vkHash) {
+                fields.verificationKey = vkHash;
+            }
+
+            // Extract permissions - with null checks
+            const permissions = body.update?.permissions;
+            if (permissions) {
+                fields.permissions = permissions;
+            }
+
+            // Extract events and actions - with length checks
+            if (Array.isArray(body.events) && body.events.length > 0) {
+                fields.events = body.events;
+            }
+            if (Array.isArray(body.actions) && body.actions.length > 0) {
+                fields.actions = body.actions;
+            }
+
+            // Extract token information if present
+            if (body.tokenId) {
+                fields.tokenId = body.tokenId;
+            }
+
+            // Extract call data if present
+            if (body.callData) {
+                fields.callData = body.callData;
+            }
+
+            // Extract preconditions if present
+            if (body.preconditions) {
+                fields.preconditions = body.preconditions;
+            }
+        } catch (error) {
+            console.warn('Error extracting fields:', error);
+        }
+
+        return fields;
+    }
+
 }
 
 export const createTransactionTracker = () => {
