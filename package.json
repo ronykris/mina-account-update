@@ -44,6 +44,7 @@
   },
   "dependencies": {
     "mina-transaction-visualizer": "^0.1.0",
-    "snarkyjs": "^0.12.1"
+    "snarkyjs": "^0.12.1",
+    "tree-crawl": "^1.2.2"
   }
 }
