@@ -3,8 +3,6 @@ import {  Mina, PrivateKey, AccountUpdate, Field, PublicKey } from 'o1js';
 import { ProofsOnlyZkApp } from './ProofsOnlyZkApps.js';
 import { SecondaryZkApp } from './SecondaryZkApp.js';
 
-import crawl from "tree-crawl";
-
 type AccountUpdateBody = {
     publicKey: PublicKey;
     tokenId: string;
@@ -15,14 +13,6 @@ type AccountUpdateBody = {
     preconditions: object;
   };
   
-  /*type AccountUpdateObj = {
-    label: string;
-    lazyAuthorization?: object; // Make it optional to handle undefined
-    id: number;
-    body: AccountUpdateBody;
-    authorization: object;
-  };*/
-  
   type ChangeLog = {
     added: {path: string; node: any}[];
     removed: {path: string; node: any}[];
@@ -32,6 +22,22 @@ type AccountUpdateBody = {
       newValue: any;
     }[]}[]    
   };
+
+  const traverseNodesRecursively = (tree: any): Set<string> => {
+    const keys = new Set<string>();
+  
+    for (const key in tree) {
+      keys.add(key)
+  
+      if (typeof tree[key] === 'object' && tree[key] !== null && !Array.isArray(tree[key])) {
+        const childKeys = traverseNodesRecursively(tree[key])
+        for (const childKey of childKeys) {
+          keys.add(`${key}.${childKey}`); // Use dot notation for nested keys
+        }
+      }
+    }
+    return keys;
+  }
 
   const traverseFirstLevelNodes = (tree: AccountUpdate): Set<string> => {
     const firstLevelKeys = new Set<string>(Object.keys(tree))
@@ -69,9 +75,20 @@ type AccountUpdateBody = {
     }
   }
 
+  const getLeafNodeValueRecursive = (tree: any, key: string): any => {
+    const keyParts = key.split('.')
+    let value = tree;
   
+    for (const part of keyParts) {
+      if (value && typeof value === 'object' && part in value) {
+        value = value[part];
+      } else {
+        return undefined; // Key not found
+      }
+    }
+    return value;
+  }
 
-  
   const compareAUTrees = (
     oldAUArray: AccountUpdate[], 
     newAUArray: AccountUpdate[],
@@ -84,24 +101,6 @@ type AccountUpdateBody = {
     const oldAUMap = new Map(oldAUArray.map((node) => [node.id, node]));
     const newAUMap = new Map(newAUArray.map((node) => [node.id, node]));
 
-    /*const traverseTree = (node: any, path: string): void => {
-      if (typeof node === 'object' && node !== null) {
-        if (Array.isArray(node)) {
-          node.forEach((item, index) => {
-            //console.log(`${path}[${index}]`, item);
-            traverseTree(item, `${path}[${index}]`);
-          });
-        } else {
-          Object.keys(node).forEach((key) => {
-            console.log(`${path}/${key}`, node[key]);
-            traverseTree(node[key], `${path}/${key}`);
-          });
-        }
-      } else {
-        console.log(`${path}`, node);
-      }
-    };*/
-
     const keysUpdated = (a: any, b: any, keyList: Set<string>): any => {
       const keysUpdatedList: {
         field: string,
@@ -110,21 +109,24 @@ type AccountUpdateBody = {
       }[] = []
       
       for ( const key of keyList ) {
-        const oldValue = getLeafNodeValue(a, key)
+        let oldValue = getLeafNodeValue(a, key)
         //console.log(`OLD VALUE ${key}: `, oldValue)
-        const newValue = getLeafNodeValue(b, key)
+        let newValue = getLeafNodeValue(b, key)
         //console.log(`NEW VALUE ${key}: `, newValue)
-        if ( typeof(newValue) !== 'object') {
-          
-          if ( newValue !== oldValue ) {
+        //console.log(`Type of ${key}: `, typeof(newValue))
+        if ( oldValue instanceof PublicKey && newValue instanceof PublicKey ) {
+          oldValue = oldValue.toBase58()
+          newValue = newValue.toBase58()
+          //console.log('Public key old value: ', oldValue)
+          //console.log('Public key new value: ', newValue)
+        }
+        if ( newValue !== oldValue ) {
             keysUpdatedList.push({
               field: key,
               oldValue: oldValue,
-              newValue: newValue === undefined ? {} : newValue
+              newValue: newValue
             })
-          }
         }
-        
       }
       return keysUpdatedList
     }
@@ -136,24 +138,42 @@ type AccountUpdateBody = {
       return set
     }
 
-    const compareAUItems = (a: AccountUpdate, b: AccountUpdate, path: string) => {
-      const keysA = traverseFirstLevelNodes(a)
-      const keysB = traverseFirstLevelNodes(b)
-      //console.log(keysA)
-      //console.log(keysB)
+    const stringifyWithBigInt = (obj: any): string => {
+      return JSON.stringify(
+        obj,
+        (key, value) => (typeof value === 'bigint' ? value.toString() : value),
+      ).toString()
+    };
+    
+
+    const compareAUItemsRecursive = (a: AccountUpdate, b: AccountUpdate, path: string) => {
+      const keysA = traverseNodesRecursively(a)
+      const keysB = traverseNodesRecursively(b)
+      //console.log('Keys A: ',keysA)
+      //console.log('Keys B: ',keysB)
       const keysRemovedList = keysRemoved(keysA, keysB)
-      for ( const key of keysRemovedList) {
-        const value = getLeafNodeValue(a, key)
+      for ( const key of keysRemovedList ) {
+        const value = getLeafNodeValueRecursive(a, key)
         changes.removed.push({
-          path: path,
+          path: `${path}.${key}`,
           node: {key, value}
         })
       }
+
       const keysAddedList = keysAdded(keysA, keysB)
       for ( const key of keysAddedList) {
-        const value = getLeafNodeValue(b, key)
+        let value: string;
+        if ( key.includes('proof') ) {
+          value = getLeafNodeValueRecursive(b, key)
+          //console.log('Value: ', value)
+          if ( value.length > 50 ) {
+            value = `${value.slice(0, 50)}...`
+          }
+        } else {
+          value = getLeafNodeValueRecursive(b, key)
+        }
         changes.added.push({
-          path: path,
+          path: `${path}.${key}`,
           node: {key, value}
         })
       }
@@ -162,10 +182,30 @@ type AccountUpdateBody = {
       keysB_modified = deleteFromSet(keysB_modified, keysAddedList)
 
       const keysUpdatedList = keysUpdated(a, b, keysB_modified)
-      changes.updated.push({
-        path: path,
-        changes: keysUpdatedList
-      })
+      for (const { field, oldValue, newValue } of keysUpdatedList) {
+        if (typeof oldValue === 'function' || typeof newValue === 'function') {
+          continue;
+        }
+        if (typeof oldValue !== 'object' || typeof newValue !== 'object' ) {
+          /*console.log('Field: ', field)*/
+          //console.log('Old Value: ', oldValue)
+          //console.log('New Value: ', newValue)
+          changes.updated.push({
+            path: `${path}.${field}`,
+            changes: [{ 
+              field, 
+              oldValue,
+              newValue: newValue === undefined ? {} : newValue
+            }],
+          });
+        } else {
+          compareAUItemsRecursive(
+            oldValue as AccountUpdate,
+            newValue as AccountUpdate,
+            `${path}.${field}`
+          );
+        }
+      }
     }
     
     // Find removed and updated elements
@@ -178,7 +218,8 @@ type AccountUpdateBody = {
         })
       } else {
         const newAUArrayItem = newAUMap.get(oldAUArrayItem.id)!
-        compareAUItems(oldAUArrayItem, newAUArrayItem, currentPath)
+        //compareAUItems(oldAUArrayItem, newAUArrayItem, currentPath)
+        compareAUItemsRecursive(oldAUArrayItem, newAUArrayItem, currentPath);
       }
     }
 
@@ -232,7 +273,8 @@ type AccountUpdateBody = {
       const txnProveData = txnProve.transaction.accountUpdates
       //console.log(txnProveData)
       const changeLog = compareAUTrees(deployTxnData, txnProveData)
-      console.log(JSON.stringify(changeLog, null, 2));
+      console.log(JSON.stringify(changeLog, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value, 2));
       
       //const txnProveSnap = tracker.takeSnapshot(txnProve, 'prove')
       
@@ -246,8 +288,6 @@ type AccountUpdateBody = {
       
       //console.log(visualizer.visualizeChangeSummary(tracker.getSnapshots()));
       //visualizer.visualizeChangeSummary(tracker.getSnapshots())
-      
 
     
 })()
-
