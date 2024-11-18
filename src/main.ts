@@ -1,8 +1,9 @@
 import { AccountUpdate, Mina, PrivateKey } from "o1js";
-import { ProofsOnlyZkApp } from './ProofsOnlyZkApps';
-import { SecondaryZkApp } from './SecondaryZkApp';
+import { ProofsOnlyZkApp } from './ProofsOnlyZkApps.js';
+import { SecondaryZkApp } from './SecondaryZkApp.js';
 
-import { AccountUpdateTrace } from './AccountUpdateTrace'
+import { AccountUpdateTrace } from './AccountUpdateTrace.js'
+import { ASCIITreeVisualizer } from "./AsciiVisualiser.js";
 
 (async function main() {
     const proofsEnabled = false;
@@ -26,36 +27,46 @@ import { AccountUpdateTrace } from './AccountUpdateTrace'
     const secondaryInstance = new SecondaryZkApp(secondaryAddr);
 
     const tracker = new AccountUpdateTrace();
+    const visualizer = new ASCIITreeVisualizer();
     
     const deployTxn = await Mina.transaction(deployerAccount, async () => {
         AccountUpdate.fundNewAccount(deployerAccount, 2);
         await proofsOnlyInstance.deploy();
         await secondaryInstance.deploy();
       }); 
-      const deployTxnData = deployTxn.transaction.accountUpdates
+      const deployTxnAU = deployTxn.transaction.accountUpdates
       //console.log(deployTxnData)
       //crawl(deployTxnData, console.log)
-      const deployTxnSnap = tracker.takeSnapshot(deployTxnData, 'deploy')
-      console.log(deployTxnSnap)
+      const deployTxnSnap = tracker.takeSnapshot(deployTxnAU, 'deploy')
+      console.log(JSON.stringify(deployTxnSnap, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value, 2))
       
       const txnProve = await deployTxn.prove();
-      const txnProveData = txnProve.transaction.accountUpdates
+      const txnProveAU = txnProve.transaction.accountUpdates
       //console.log(txnProveData)
       //const changeLog = compareAUTrees(deployTxnData, txnProveData)
       //console.log(JSON.stringify(changeLog, (key, value) =>
       //  typeof value === 'bigint' ? value.toString() : value, 2));
       
-      //const txnProveSnap = tracker.takeSnapshot(txnProve, 'prove')
+      const txnProveSnap = tracker.takeSnapshot(txnProveAU, 'prove')
+      console.log(JSON.stringify(txnProveSnap, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value, 2))
       
       const txnSign = deployTxn.sign([deployerKey, proofsOnlySk, secondarySk]);
+      const txnSignAU = txnSign.transaction.accountUpdates 
       //console.log(txnSign.toJSON())
-      //const txnSignSnap = tracker.takeSnapshot(txnSign, 'sign')
-      
+      const txnSignSnap = tracker.takeSnapshot(txnSignAU, 'sign')
+      console.log(JSON.stringify(txnSignSnap, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value, 2))
+
       const txnRcvd = await deployTxn.send();
       //console.log(txnRcvd.toJSON())
-      //const txnRcvdSnap = tracker.takeSnapshot(txnRcvd, 'send')
-      
-      //console.log(visualizer.visualizeChangeSummary(tracker.getSnapshots()));
+      const txnRcvdAU = txnRcvd.transaction.accountUpdates
+      const txnRcvdSnap = tracker.takeSnapshot(txnRcvdAU, 'send')
+      console.log(JSON.stringify(txnRcvdSnap, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value, 2))
+
+      console.log(visualizer.visualizeChangeSummary(tracker.getSnapshots()));
       //visualizer.visualizeChangeSummary(tracker.getSnapshots())
 
     

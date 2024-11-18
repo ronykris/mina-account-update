@@ -1,29 +1,5 @@
-type TreeOperation = 'deploy' | 'prove' | 'sign' | 'send';
+import { ChangeLog, TreeChanges, TreeSnapshot } from "./Interface";
 
-// Structure for tracking changes
-interface FieldChange {
-    field: string;
-    before: any;
-    after: any;
-}
-
-interface NodeChange {
-    node: string;
-    changes: FieldChange[];
-}
-
-interface TreeChanges {
-    added: string[];
-    removed: string[];
-    modified: NodeChange[];
-}
-
-interface TreeSnapshot {
-    operation: TreeOperation;
-    timestamp: number;
-    tree: any;  // The actual transaction data
-    changes: TreeChanges;
-}
 
 export class ASCIITreeVisualizer {
     private readonly INDENT = '  ';
@@ -84,7 +60,7 @@ export class ASCIITreeVisualizer {
         return str;
     }
 
-    private visualizeChanges(changes: TreeChanges): string {
+    private visualizeChanges(changes: ChangeLog): string {
         let result = '';
 
         if (changes.added.length > 0) {
@@ -95,25 +71,25 @@ export class ASCIITreeVisualizer {
             });
         }
 
-        if (changes.modified.length > 0) {
+        if (changes.updated.length > 0) {
             if (changes.added.length > 0) result += '\n';
             result += `${this.COLORS.yellow}${this.SYMBOLS.branch} Modified:${this.COLORS.reset}\n`;
             
-            changes.modified.forEach((mod, i) => {
-                const isLast = i === changes.modified.length - 1;
+            changes.updated.forEach((mod, i) => {
+                const isLast = i === changes.updated.length - 1;
                 const prefix = isLast ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
-                result += `${this.COLORS.yellow}${prefix} ${this.SYMBOLS.modified} ${mod.node}${this.COLORS.reset}\n`;
+                result += `${this.COLORS.yellow}${prefix} ${this.SYMBOLS.modified} ${mod.changes}${this.COLORS.reset}\n`;
                 
                 mod.changes.forEach((change, j) => {
                     const changePrefix = j === mod.changes.length - 1 ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
                     result += `${this.COLORS.gray}    ${changePrefix} ${change.field}: ${this.COLORS.reset}` +
-                             `${this.formatValue(change.before)} ${this.SYMBOLS.arrow} ${this.formatValue(change.after)}\n`;
+                             `${this.formatValue(change.oldValue)} ${this.SYMBOLS.arrow} ${this.formatValue(change.newValue)}\n`;
                 });
             });
         }
 
         if (changes.removed.length > 0) {
-            if (changes.added.length > 0 || changes.modified.length > 0) result += '\n';
+            if (changes.added.length > 0 || changes.updated.length > 0) result += '\n';
             result += `${this.COLORS.red}${this.SYMBOLS.branch} Removed:${this.COLORS.reset}\n`;
             changes.removed.forEach((path, i) => {
                 const prefix = i === changes.removed.length - 1 ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
