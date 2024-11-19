@@ -1,9 +1,10 @@
-import { AccountUpdate, PublicKey } from 'o1js';
+import { AccountUpdate, PublicKey, Transaction} from 'o1js';
 import { TreeSnapshot, TreeOperation, ChangeLog } from './Interface'
 
 export class AccountUpdateTrace {
     private snapshots: TreeSnapshot[] = [];
-    private currentTree: AccountUpdate[] = [];
+    //private currentTree: AccountUpdate[] = [];
+    private currentTree: any;
 
     private getLeafNodeValue = (tree: any, key: string): any => {
         //console.log(tree)
@@ -103,12 +104,49 @@ export class AccountUpdateTrace {
         return value;
     }
 
+    private traverseFirstLevelNodes = (tree: any): string[] => {
+        const firstLevelKeys = Object.keys(tree);
+        //console.log('First-Level Keys:', firstLevelKeys);      
+        return firstLevelKeys;
+    }
+
+    /*private compareTxnTree = (treeA: any, treeB: any): ChangeLog => {
+        const changes: ChangeLog = {
+            added: [], removed: [], updated: []
+        }
+
+        const keysTreeA = this.traverseFirstLevelNodes(treeA)
+        const keysTreeB = this.traverseFirstLevelNodes(treeB)
+
+        for ( const key of keysTreeB ) {
+            if ( key === 'accountUpdates') {
+                const oldAUTree = this.getLeafNodeValue(treeA, key)
+                const newAUtree = this.getLeafNodeValue(treeB, key)
+                this.compareAUTrees(oldAUTree, newAUtree)
+            }
+            const oldValue = this.getLeafNodeValue(treeA, key)
+            const newValue = this.getLeafNodeValue(treeB, key)
+            if ( oldValue !== newValue ) {
+                changes.updated.push({
+                    path: 'transaction',
+                    changes: [{
+                        field: key,
+                        oldValue: oldValue,
+                        newValue: newValue
+                    }]
+                })
+            }
+        }
+        return changes
+    }*/
+
     
 
     private compareAUTrees = (
         oldAUArray: AccountUpdate[], 
         newAUArray: AccountUpdate[],
         path: string = 'accountUpdate'
+        //path: string = 'transaction'
       ): ChangeLog => {
         const changes: ChangeLog = {
           added: [], removed: [], updated: []
@@ -208,16 +246,16 @@ export class AccountUpdateTrace {
     }
 
 
-    public takeSnapshot(accountUpdates: AccountUpdate[], operation: TreeOperation): TreeSnapshot {
+    public takeSnapshot(transaction: any, operation: TreeOperation): TreeSnapshot {
         const snapshot: TreeSnapshot = {
             operation,
             timestamp: Date.now(),
-            tree: accountUpdates,
-            changes: this.compareAUTrees(this.currentTree, accountUpdates)
+            tree: transaction,
+            changes: this.compareAUTrees(this.currentTree, transaction)
         };
 
         this.snapshots.push(snapshot);
-        this.currentTree = accountUpdates;
+        this.currentTree = transaction;
         return snapshot;
     }
 
