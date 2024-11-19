@@ -1,4 +1,4 @@
-import { ChangeLog, TreeChanges, TreeSnapshot } from "./Interface";
+import { ChangeLog, TreeSnapshot } from "./Interface";
 
 
 export class ASCIITreeVisualizer {
@@ -60,14 +60,26 @@ export class ASCIITreeVisualizer {
         return str;
     }
 
+    private stringifyWithBigInt = (obj: any): string => {
+        return JSON.stringify(
+          obj,
+          (key, value) => (typeof value === 'bigint' ? value.toString() : value),
+        )
+    };
+
     private visualizeChanges(changes: ChangeLog): string {
         let result = '';
 
         if (changes.added.length > 0) {
             result += `${this.COLORS.green}${this.SYMBOLS.branch} Added:${this.COLORS.reset}\n`;
-            changes.added.forEach((path, i) => {
-                const prefix = i === changes.added.length - 1 ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
-                result += `${this.COLORS.green}${prefix} ${this.SYMBOLS.added} ${path}${this.COLORS.reset}\n`;
+
+            changes.added.forEach((item, i) => {
+                const isLast = i === changes.added.length - 1;
+                const prefix = isLast ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
+                result += `${this.COLORS.green}${prefix} ${this.SYMBOLS.added} ${item.path}${this.COLORS.reset}\n`;
+
+                const addPrefix = isLast ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
+                result += `${this.COLORS.green}    ${addPrefix} ${this.stringifyWithBigInt(item.node)} ${this.COLORS.reset}\n` 
             });
         }
 
@@ -78,7 +90,7 @@ export class ASCIITreeVisualizer {
             changes.updated.forEach((mod, i) => {
                 const isLast = i === changes.updated.length - 1;
                 const prefix = isLast ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
-                result += `${this.COLORS.yellow}${prefix} ${this.SYMBOLS.modified} ${mod.changes}${this.COLORS.reset}\n`;
+                result += `${this.COLORS.yellow}${prefix} ${this.SYMBOLS.modified} ${mod.path}${this.COLORS.reset}\n`;
                 
                 mod.changes.forEach((change, j) => {
                     const changePrefix = j === mod.changes.length - 1 ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
@@ -91,9 +103,15 @@ export class ASCIITreeVisualizer {
         if (changes.removed.length > 0) {
             if (changes.added.length > 0 || changes.updated.length > 0) result += '\n';
             result += `${this.COLORS.red}${this.SYMBOLS.branch} Removed:${this.COLORS.reset}\n`;
-            changes.removed.forEach((path, i) => {
-                const prefix = i === changes.removed.length - 1 ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
-                result += `${this.COLORS.red}${prefix} ${this.SYMBOLS.removed} ${path}${this.COLORS.reset}\n`;
+
+            changes.removed.forEach((item, i) => {
+                const isLast = i === changes.removed.length - 1;
+                const prefix = isLast ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
+                result += `${this.COLORS.red}${prefix} ${this.SYMBOLS.removed} ${item.path}${this.COLORS.reset}\n`;
+
+                const removePrefix = i === changes.removed.length - 1 ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
+                result += `${this.COLORS.red}    ${removePrefix} ${this.stringifyWithBigInt(item.node)} ${this.COLORS.reset}\n` 
+                //result += `${this.COLORS.red}${prefix} ${this.SYMBOLS.removed} ${item}${this.COLORS.reset}\n`;
             });
         }
 

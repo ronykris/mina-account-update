@@ -69,13 +69,6 @@ export class AccountUpdateTrace {
         return set
     }
 
-    private stringifyWithBigInt = (obj: any): string => {
-        return JSON.stringify(
-          obj,
-          (key, value) => (typeof value === 'bigint' ? value.toString() : value),
-        ).toString()
-    };
-
     private keysRemoved = (a: Set<string>, b: Set<string>): string[] => {
         let keysRemovedList: string[] = []
         for ( const key of a) {

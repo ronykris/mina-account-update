@@ -38,36 +38,34 @@ import { ASCIITreeVisualizer } from "./AsciiVisualiser.js";
       //console.log(deployTxnData)
       //crawl(deployTxnData, console.log)
       const deployTxnSnap = tracker.takeSnapshot(deployTxnAU, 'deploy')
-      console.log(JSON.stringify(deployTxnSnap, (key, value) =>
-        typeof value === 'bigint' ? value.toString() : value, 2))
+      //console.log(JSON.stringify(deployTxnSnap, (key, value) =>
+      //  typeof value === 'bigint' ? value.toString() : value, 2))
       
       const txnProve = await deployTxn.prove();
       const txnProveAU = txnProve.transaction.accountUpdates
       //console.log(txnProveData)
       //const changeLog = compareAUTrees(deployTxnData, txnProveData)
       //console.log(JSON.stringify(changeLog, (key, value) =>
-      //  typeof value === 'bigint' ? value.toString() : value, 2));
-      
+      //  typeof value === 'bigint' ? value.toString() : value, 2));      
       const txnProveSnap = tracker.takeSnapshot(txnProveAU, 'prove')
-      console.log(JSON.stringify(txnProveSnap, (key, value) =>
-        typeof value === 'bigint' ? value.toString() : value, 2))
+      //console.log(JSON.stringify(txnProveSnap, (key, value) =>
+      //  typeof value === 'bigint' ? value.toString() : value, 2))
       
       const txnSign = deployTxn.sign([deployerKey, proofsOnlySk, secondarySk]);
       const txnSignAU = txnSign.transaction.accountUpdates 
       //console.log(txnSign.toJSON())
       const txnSignSnap = tracker.takeSnapshot(txnSignAU, 'sign')
-      console.log(JSON.stringify(txnSignSnap, (key, value) =>
-        typeof value === 'bigint' ? value.toString() : value, 2))
+      //console.log(JSON.stringify(txnSignSnap, (key, value) =>
+      //  typeof value === 'bigint' ? value.toString() : value, 2))
 
       const txnRcvd = await deployTxn.send();
       //console.log(txnRcvd.toJSON())
       const txnRcvdAU = txnRcvd.transaction.accountUpdates
       const txnRcvdSnap = tracker.takeSnapshot(txnRcvdAU, 'send')
-      console.log(JSON.stringify(txnRcvdSnap, (key, value) =>
-        typeof value === 'bigint' ? value.toString() : value, 2))
+      //console.log(JSON.stringify(txnRcvdSnap, (key, value) =>
+      //  typeof value === 'bigint' ? value.toString() : value, 2))
 
       console.log(visualizer.visualizeChangeSummary(tracker.getSnapshots()));
-      //visualizer.visualizeChangeSummary(tracker.getSnapshots())
 
     
 })()

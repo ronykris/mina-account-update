@@ -1,21 +1,6 @@
 type TreeOperation = 'deploy' | 'prove' | 'sign' | 'send';
 
-interface FieldChange {
-    field: string;
-    before: any;
-    after: any;
-}
 
-interface NodeChange {
-    node: string;
-    changes: FieldChange[];
-}
-
-interface TreeChanges {
-    added: string[];
-    removed: string[];
-    modified: NodeChange[];
-}
 
 interface TreeSnapshot {
     operation: TreeOperation;
@@ -34,4 +19,4 @@ type ChangeLog = {
     }[]}[]    
 };
 
-export { FieldChange, NodeChange, TreeChanges, TreeSnapshot, TreeOperation, ChangeLog };
+export { TreeSnapshot, TreeOperation, ChangeLog };
