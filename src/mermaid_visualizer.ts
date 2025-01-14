@@ -1,3 +1,7 @@
+import { readFileSync, writeFileSync } from 'fs';
+import path from 'path';
+
+
 declare global {
     interface Window {
         fs: {
@@ -98,13 +102,9 @@ interface VisualizerConfig {
     detailedTransactionInfo?: boolean;
 }
 
-// Helper function
-async function readFileAsString(path: string): Promise<string> {
-    const response = await window.fs.readFile(path, { encoding: 'utf8' });
-    if (response instanceof Uint8Array) {
-        return new TextDecoder().decode(response);
-    }
-    return response;
+
+async function readFileAsString(filepath: string): Promise<string> {
+    return readFileSync(path.join(process.cwd(), 'src', filepath), 'utf8');
 }
 
 export class TransactionVisualizer {
@@ -148,71 +148,10 @@ export class TransactionVisualizer {
         ];
     }
 
-    private generateNodes(): { nodes: string[], nodeMap: Map<string, string> } {
-        const nodes: string[] = [];
-        const nodeMap = new Map<string, string>();
-
-        this.data.updatedAccounts.forEach((account, index) => {
-            const nodeId = this.generateNodeId(index);
-            const shortAddr = this.shortenAddress(account.accountAddress);
-            const balance = this.formatBalance(account.totalBalanceChange, true);
-            const style = this.getNodeStyle(account);
-
-            nodes.push(`${nodeId}[${shortAddr}<br/>Balance: ${balance}]:::${style}`);
-            nodeMap.set(account.accountAddress, nodeId);
-        });
-
-        return { nodes, nodeMap };
-    }
-
+    
+    
     private generateNodeId(index: number): string {
         return `${this.config.nodePrefix}${index}`;
-    }
-
-    private generateEdges(nodeMap: Map<string, string>): string[] {
-        const edges: string[] = [];
-        
-        const senders = this.data.updatedAccounts.filter(acc => acc.totalBalanceChange < 0);
-        const receivers = this.data.updatedAccounts.filter(acc => acc.totalBalanceChange > 0);
-
-        senders.forEach(sender => {
-            receivers.forEach(receiver => {
-                const senderId = nodeMap.get(sender.accountAddress);
-                const receiverId = nodeMap.get(receiver.accountAddress);
-                
-                if (senderId && receiverId) {
-                    const amount = Math.abs(sender.totalBalanceChange);
-                    const label = this.formatBalance(amount, true);
-                    edges.push(`${senderId} -->|"${label}"| ${receiverId}`);
-                }
-            });
-        });
-
-        return edges;
-    }
-
-    private generateTransactionInfo(): string[] {
-        const info = ['subgraph Transaction Info'];
-        
-        if (this.config.detailedTransactionInfo) {
-            info.push(
-                `TxHash[TX: ${this.shortenAddress(this.data.txHash)}]`,
-                `Memo[Memo: ${this.data.memo}]`,
-                `Block[Block: ${this.data.blockHeight}]`,
-                `Fee[Fee: ${this.formatBalance(this.data.fee, true)}]`,
-                `Status[Status: ${this.data.txStatus}]`,
-                `Time[Time: ${new Date(this.data.timestamp).toISOString()}]`
-            );
-        } else {
-            info.push(
-                `TxHash[TX: ${this.shortenAddress(this.data.txHash)}]`,
-                `Memo[Memo: ${this.data.memo}]`,
-                `Block[Block: ${this.data.blockHeight}]`
-            );
-        }
-        
-        info.push('end');
-        return info;
     }
 
     public generateMermaidCode(): string {
@@ -221,23 +160,89 @@ export class TransactionVisualizer {
             const { nodes, nodeMap } = this.generateNodes();
             const edges = this.generateEdges(nodeMap);
             const txInfo = this.generateTransactionInfo();
-
+    
             return [
                 ...styles,
-                '',
-                ...nodes,
-                '',
-                ...edges,
-                '',
-                ...txInfo
+                '',  // Empty line after styles
+                nodes.join('\n'),  // Join nodes with newlines
+                '',  // Empty line after nodes
+                edges.join('\n'),  // Join edges with newlines
+                '',  // Empty line after edges
+                '',  // Extra empty line before subgraph
+                txInfo.join('\n')  // Join transaction info with newlines
             ].join('\n');
         } catch (error) {
             throw new Error(`Failed to generate Mermaid code: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
+    
+    private generateNodes(): { nodes: string[], nodeMap: Map<string, string> } {
+        const nodes: string[] = [];
+        const nodeMap = new Map<string, string>();
+    
+        this.data.updatedAccounts.forEach((account, index) => {
+            const nodeId = this.generateNodeId(index);
+            const shortAddr = this.shortenAddress(account.accountAddress);
+            const balance = this.formatBalance(account.totalBalanceChange, true);
+            const style = this.getNodeStyle(account);
+    
+            // Add spaces around <br/> tag
+            nodes.push(`${nodeId}["${shortAddr} <br/> Balance: ${balance}"]:::${style}`);
+            nodeMap.set(account.accountAddress, nodeId);
+        });
+    
+        return { nodes, nodeMap };
+    }
+    
+    private generateEdges(nodeMap: Map<string, string>): string[] {
+        const edges: string[] = [];
+        
+        const senders = this.data.updatedAccounts.filter(acc => acc.totalBalanceChange < 0);
+        const receivers = this.data.updatedAccounts.filter(acc => acc.totalBalanceChange > 0);
+    
+        senders.forEach(sender => {
+            receivers.forEach(receiver => {
+                const senderId = nodeMap.get(sender.accountAddress);
+                const receiverId = nodeMap.get(receiver.accountAddress);
+                
+                if (senderId && receiverId) {
+                    const amount = Math.abs(sender.totalBalanceChange);
+                    const label = this.formatBalance(amount, true);
+                    edges.push(`${senderId} --> |"${label}"| ${receiverId}`);
+                }
+            });
+        });
+    
+        return edges;
+    }
+
+    private generateTransactionInfo(): string[] {
+        const info = ['subgraph TransactionInfo'];
+        
+        if (this.config.detailedTransactionInfo) {
+            info.push(
+                `    TxHash[["TX: ${this.shortenAddress(this.data.txHash)}"]]`,
+                `    Memo[["Memo: ${this.data.memo}"]]`,
+                `    Block[["Block: ${this.data.blockHeight}"]]`,
+                `    TxFee[["Fee: ${this.formatBalance(this.data.fee, true)}"]]`,
+                `    TxStatus[["Status: ${this.data.txStatus}"]]`,
+                `    TxTime[["Time: ${new Date(this.data.timestamp).toISOString()}"]]`
+            );
+        } else {
+            info.push(
+                `    TxHash[["TX: ${this.shortenAddress(this.data.txHash)}"]]`,
+                `    Memo[["Memo: ${this.data.memo}"]]`,
+                `    Block[["Block: ${this.data.blockHeight}"]]`
+            );
+        }
+        
+        info.push('end');
+        return info;
+    }
+
+    
 }
 
-// Main visualization function
 export async function visualizeTransaction(): Promise<string> {
     try {
         const fileContent = await readFileAsString('dummy_data.txt');
@@ -249,7 +254,12 @@ export async function visualizeTransaction(): Promise<string> {
         };
 
         const visualizer = new TransactionVisualizer(txData, config);
-        return visualizer.generateMermaidCode();
+        const mermaidCode = visualizer.generateMermaidCode();
+        
+        // Write the Mermaid code to a file
+        writeFileSync('transaction.mmd', mermaidCode);
+        
+        return mermaidCode;
     } catch (error) {
         throw new Error(`Error processing transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
