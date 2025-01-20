@@ -14,3 +14,6 @@ keys
 
 *.txt
 deploy*.json
+trace*.log
+mina-fungible-token/
+src/*
