@@ -1,4 +1,4 @@
-import { AccountUpdate, PublicKey, Transaction} from 'o1js';
+import { AccountUpdate, PublicKey, Transaction } from 'o1js';
 import { TreeSnapshot, TreeOperation, ChangeLog, TransactionState, AUMetadata, AccountType } from './Interface'
 
 export class AUTrace {
@@ -111,9 +111,12 @@ export class AUTrace {
     }
 
     private isContractAccount(au: AccountUpdate): boolean {
+        //console.log(`Verification Key of ${au.body.publicKey.toBase58()} : ${au.body?.update?.verificationKey.value.hash}`)
+        //console.log(`Auth kind of ${au.body.publicKey.toBase58()} : ${au.lazyAuthorization?.kind}`)
         // 1. Check the label for contract indicators
         if (au.label) {
             const labelLower = au.label.toLowerCase();
+            console.log('Label: ', labelLower)
             if (labelLower.includes('contract') || 
                 labelLower.includes('zkapp') ||
                 labelLower.includes('deploy')) {            
@@ -123,10 +126,10 @@ export class AUTrace {
 
         //2. Check for verification key updates
         // Contracts typically have verification keys
-        if (au.body?.update?.verificationKey) {
+        if (au.body?.update?.verificationKey.value.data) {
             return true;
         }
-
+        /*
         // 3. Check for proof-based permissions
         // Contracts typically use proofs for authorization
         if (au.body?.update?.permissions.value) {
@@ -145,7 +148,7 @@ export class AUTrace {
             if (requiresProof) {
                 return true;
             }
-        }
+        }*/
 
         // 4. Check authorization type
         // Contracts often use proof-based authorization
