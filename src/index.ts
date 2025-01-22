@@ -1,5 +1,13 @@
-export {}
 import { visualizeTransaction } from './mermaid_visualizer.js';
 
-visualizeTransaction().then(console.log).catch(console.error);
+// Main execution
+async function main() {
+    try {
+        const mermaidCode = await visualizeTransaction();
+        console.log(mermaidCode);
+    } catch (error) {
+        console.error('Error generating visualization:', error);
+    }
+}
 
+main();

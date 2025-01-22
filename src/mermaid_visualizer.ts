@@ -1,110 +1,72 @@
-import { readFileSync, writeFileSync } from 'fs';
-import path from 'path';
+// Import Node's fs promises API
+import { readFile } from 'fs/promises';
+import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import { existsSync } from 'fs';
 
+// Get the directory name of the current module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-declare global {
-    interface Window {
-        fs: {
-            readFile(path: string, options?: { encoding?: string }): Promise<string | Uint8Array>;
+// Styling constants for the visualizer
+export const STYLE_CONSTANTS = {
+    GRAPH_DIRECTION: 'TB',
+    NODE_STYLES: {
+        ZKAPP: {
+            name: 'zkapp',
+            fill: '#e6e6fa',
+            stroke: '#483D8B',  // Darker border for better contrast
+            strokeWidth: '4px', // Increased border thickness
+            fontWeight: 'bold',
+            fontSize: '16px'
+        },
+        NORMAL: {
+            name: 'normal',
+            fill: '#B0E0E6',    // Slightly darker for better visibility
+            stroke: '#4682B4',  // Steel blue border
+            strokeWidth: '3px',
+            fontSize: '14px'
+        },
+        NEGATIVE: {
+            name: 'negative',
+            fill: '#FFB6C1',
+            stroke: '#CD5C5C',  // Indian red border
+            strokeWidth: '3px',
+            fontSize: '14px'
+        },
+        INFO: {
+            name: 'info',
+            fill: '#F0F8FF',    // Alice blue background
+            stroke: '#4682B4',  // Steel blue border
+            strokeWidth: '2px',
+            fontSize: '14px'
         }
+    },
+    ADDRESS_TRUNCATE_LENGTH: 6,
+    SUBGRAPH_NAME: 'TransactionInfo',
+    FONT_SIZES: {              // Enhanced font sizes for better readability
+        NODE: 16,
+        LABEL: 14,
+        INFO: 15,
+        TITLE: 18
+    },
+    SPACING: {                 // Added spacing configurations
+        NODE_PADDING: 20,
+        EDGE_LENGTH: 50
     }
-}
+} as const;
 
-
-interface AccountPermissions {
-    access: string | null;
-    editActionState: string | null;
-    editState: string | null;
-    incrementNonce: string | null;
-    receive: string | null;
-    send: string | null;
-    setDelegate: string | null;
-    setPermissions: string | null;
-    setTiming: string | null;
-    setTokenSymbol: string | null;
-    setVerificationKey: string | null;
-    setVotingFor: string | null;
-    setZkappUri: string | null;
-}
-
-interface AccountTiming {
-    initialMinimumBalance: number | null;
-    cliffTime: number | null;
-    cliffAmount: number | null;
-    vestingPeriod: number | null;
-    vestingIncrement: number | null;
-}
-
-interface AccountScam {
-    scamId: string | null;
-    objectType: string | null;
-    onchainId: string | null;
-    defaultSecurityMessage: string | null;
-    securityMessage: string | null;
-    scamType: string | null;
-}
-
-interface AccountUpdate {
-    appState: string[];
-    delegateeAddress: string | null;
-    delegateeName: string | null;
-    delegateeImg: string | null;
-    permissions: AccountPermissions;
-    timing: AccountTiming;
-    tokenSymbol: string | null;
-    verificationKey: string | null;
-    votingFor: string | null;
-    zkappUri: string | null;
-}
-
-interface Account {
-    accountAddress: string;
-    accountName: string | null;
-    accountImg: string | null;
-    isZkappAccount: boolean;
-    verificationKey: string | null;
-    verificationKeyHash: string | null;
-    accountScam: AccountScam;
-    incrementNonce: boolean;
-    totalBalanceChange: number;
-    totalBalanceChangeUsd: number;
-    callDepth: number;
-    useFullCommitment: boolean;
-    callData: string;
-    tokenId: string;
-    update: AccountUpdate;
-}
-
-interface Transaction {
-    blockHeight: number;
-    stateHash: string;
-    blockStatus: string;
-    timestamp: number;
-    txHash: string;
-    txStatus: string;
-    failures: string[];
-    memo: string;
-    feePayerAddress: string;
-    fee: number;
-    feeUsd: number;
-    totalBalanceChange: number;
-    totalBalanceChangeUsd: number;
-    updatedAccountsCount: number;
-    updatedAccounts: Account[];
-    blockConfirmationsCount: number;
-    isZkappAccount: boolean;
-    nonce: number;
-}
-
-interface VisualizerConfig {
-    nodePrefix?: string;
-    showUsdValues?: boolean;
-    detailedTransactionInfo?: boolean;
-}
-
-
-async function readFileAsString(filepath: string): Promise<string> {
-    return readFileSync(path.join(process.cwd(), 'src', filepath), 'utf8');
+// Helper function to generate style definitions
+export function generateStyleDefinitions(): string[] {
+    const { NODE_STYLES, GRAPH_DIRECTION } = STYLE_CONSTANTS;
+    
+    return [
+        `graph ${GRAPH_DIRECTION}`,
+        `classDef ${NODE_STYLES.ZKAPP.name} fill:${NODE_STYLES.ZKAPP.fill},stroke:${NODE_STYLES.ZKAPP.stroke},stroke-width:${NODE_STYLES.ZKAPP.strokeWidth}`,
+        `classDef ${NODE_STYLES.NORMAL.name} fill:${NODE_STYLES.NORMAL.fill},stroke:${NODE_STYLES.NORMAL.stroke},stroke-width:${NODE_STYLES.NORMAL.strokeWidth}`,
+        `classDef ${NODE_STYLES.NEGATIVE.name} fill:${NODE_STYLES.NEGATIVE.fill},stroke:${NODE_STYLES.NEGATIVE.stroke},stroke-width:${NODE_STYLES.NEGATIVE.strokeWidth}`
+    ];
 }
 
 export class TransactionVisualizer {
@@ -122,12 +84,14 @@ export class TransactionVisualizer {
 
     private shortenAddress(address: string): string {
         if (!address) throw new Error('Invalid address provided');
-        return `${address.slice(0, 6)}...${address.slice(-6)}`;
+        const { ADDRESS_TRUNCATE_LENGTH } = STYLE_CONSTANTS;
+        return `${address.slice(0, ADDRESS_TRUNCATE_LENGTH)}...${address.slice(-ADDRESS_TRUNCATE_LENGTH)}`;
     }
 
     private getNodeStyle(account: Account): string {
-        if (account.isZkappAccount) return 'zkapp';
-        return account.totalBalanceChange >= 0 ? 'normal' : 'negative';
+        const { NODE_STYLES } = STYLE_CONSTANTS;
+        if (account.isZkappAccount) return NODE_STYLES.ZKAPP.name;
+        return account.totalBalanceChange >= 0 ? NODE_STYLES.NORMAL.name : NODE_STYLES.NEGATIVE.name;
     }
 
     private formatBalance(balance: number, includeUsd: boolean = false): string {
@@ -139,24 +103,9 @@ export class TransactionVisualizer {
         return formatted;
     }
 
-    private addStyleDefinitions(): string[] {
-        return [
-            'graph TB',
-            'classDef zkapp fill:#e6e6fa,stroke:#333,stroke-width:2px',
-            'classDef normal fill:#add8e6,stroke:#333,stroke-width:2px',
-            'classDef negative fill:#ffb6c1,stroke:#333,stroke-width:2px'
-        ];
-    }
-
-    
-    
-    private generateNodeId(index: number): string {
-        return `${this.config.nodePrefix}${index}`;
-    }
-
     public generateMermaidCode(): string {
         try {
-            const styles = this.addStyleDefinitions();
+            const styles = generateStyleDefinitions();
             const { nodes, nodeMap } = this.generateNodes();
             const edges = this.generateEdges(nodeMap);
             const txInfo = this.generateTransactionInfo();
@@ -164,12 +113,12 @@ export class TransactionVisualizer {
             return [
                 ...styles,
                 '',  // Empty line after styles
-                nodes.join('\n'),  // Join nodes with newlines
+                nodes.join('\n'),
                 '',  // Empty line after nodes
-                edges.join('\n'),  // Join edges with newlines
+                edges.join('\n'),
                 '',  // Empty line after edges
                 '',  // Extra empty line before subgraph
-                txInfo.join('\n')  // Join transaction info with newlines
+                txInfo.join('\n')
             ].join('\n');
         } catch (error) {
             throw new Error(`Failed to generate Mermaid code: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -186,7 +135,6 @@ export class TransactionVisualizer {
             const balance = this.formatBalance(account.totalBalanceChange, true);
             const style = this.getNodeStyle(account);
     
-            // Add spaces around <br/> tag
             nodes.push(`${nodeId}["${shortAddr} <br/> Balance: ${balance}"]:::${style}`);
             nodeMap.set(account.accountAddress, nodeId);
         });
@@ -217,53 +165,108 @@ export class TransactionVisualizer {
     }
 
     private generateTransactionInfo(): string[] {
-        const info = ['subgraph TransactionInfo'];
+        const { SUBGRAPH_NAME, NODE_STYLES } = STYLE_CONSTANTS;
+        // Add dummy node to push transaction info to bottom
+        const info = [
+            `Bottom[ ]:::${NODE_STYLES.INFO.name}`,
+            `subgraph ${SUBGRAPH_NAME}`  // Remove style from subgraph declaration
+        ];
         
         if (this.config.detailedTransactionInfo) {
             info.push(
-                `    TxHash[["TX: ${this.shortenAddress(this.data.txHash)}"]]`,
-                `    Memo[["Memo: ${this.data.memo}"]]`,
-                `    Block[["Block: ${this.data.blockHeight}"]]`,
-                `    TxFee[["Fee: ${this.formatBalance(this.data.fee, true)}"]]`,
-                `    TxStatus[["Status: ${this.data.txStatus}"]]`,
-                `    TxTime[["Time: ${new Date(this.data.timestamp).toISOString()}"]]`
+                `    TxHash["TX: ${this.shortenAddress(this.data.txHash)}"]:::${NODE_STYLES.INFO.name}`,
+                `    Memo["Memo: ${this.data.memo}"]:::${NODE_STYLES.INFO.name}`,
+                `    Block["Block: ${this.data.blockHeight}"]:::${NODE_STYLES.INFO.name}`,
+                `    TxFee["Fee: ${this.formatBalance(this.data.fee, true)}"]:::${NODE_STYLES.INFO.name}`,
+                `    TxStatus["Status: ${this.data.txStatus}"]:::${NODE_STYLES.INFO.name}`,
+                `    TxTime["Time: ${new Date(this.data.timestamp).toISOString()}"]:::${NODE_STYLES.INFO.name}`
             );
         } else {
             info.push(
-                `    TxHash[["TX: ${this.shortenAddress(this.data.txHash)}"]]`,
-                `    Memo[["Memo: ${this.data.memo}"]]`,
-                `    Block[["Block: ${this.data.blockHeight}"]]`
+                `    TxHash["TX: ${this.shortenAddress(this.data.txHash)}"]:::${NODE_STYLES.INFO.name}`,
+                `    Memo["Memo: ${this.data.memo}"]:::${NODE_STYLES.INFO.name}`,
+                `    Block["Block: ${this.data.blockHeight}"]:::${NODE_STYLES.INFO.name}`
             );
         }
         
         info.push('end');
+        
+        // Style the subgraph after its declaration
+        info.push(`style ${SUBGRAPH_NAME} fill:${NODE_STYLES.INFO.fill},stroke:${NODE_STYLES.INFO.stroke},stroke-width:${NODE_STYLES.INFO.strokeWidth}`);
+        
+        // Add invisible edge to push transaction info to bottom
+        info.push(`Bottom --> TxHash[ ]:::${NODE_STYLES.INFO.name}`);
         return info;
     }
 
-    
+    private generateNodeId(index: number): string {
+        return `${this.config.nodePrefix}${index}`;
+    }
 }
 
+// Main visualization function
 export async function visualizeTransaction(): Promise<string> {
     try {
-        const fileContent = await readFileAsString('dummy_data.txt');
-        const txData = JSON.parse(fileContent) as Transaction;
+        // First try current directory
+        let dataPath = 'dummy_data.txt';
+        
+        // If file doesn't exist in current directory, try src/data
+        if (!existsSync(dataPath)) {
+            dataPath = join(__dirname, '..', '..', 'src', 'dummy_data.txt');
+        }
+        
+        // Log the path we're trying to read from
+        console.log('Attempting to read from:', dataPath);
+        
+        const response = await readFile(dataPath);
+        const content = response.toString('utf-8');
+        const txData = JSON.parse(content) as Transaction;
 
+        // Configure the visualizer
         const config: VisualizerConfig = {
             showUsdValues: true,
             detailedTransactionInfo: true
         };
 
+        // Generate the Mermaid diagram code
         const visualizer = new TransactionVisualizer(txData, config);
-        const mermaidCode = visualizer.generateMermaidCode();
-        
-        // Write the Mermaid code to a file
-        writeFileSync('transaction.mmd', mermaidCode);
-        
-        return mermaidCode;
+        return visualizer.generateMermaidCode();
     } catch (error) {
         throw new Error(`Error processing transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 }
 
-// Execute
-visualizeTransaction().then(console.log).catch(console.error);
+// Note: Temporarily keeping the Transaction interface until we import from o1js
+interface Transaction {
+    blockHeight: number;
+    stateHash: string;
+    blockStatus: string;
+    timestamp: number;
+    txHash: string;
+    txStatus: string;
+    failures: string[];
+    memo: string;
+    feePayerAddress: string;
+    fee: number;
+    feeUsd: number;
+    totalBalanceChange: number;
+    totalBalanceChangeUsd: number;
+    updatedAccountsCount: number;
+    updatedAccounts: Account[];
+    blockConfirmationsCount: number;
+    isZkappAccount: boolean;
+    nonce: number;
+}
+
+interface Account {
+    accountAddress: string;
+    isZkappAccount: boolean;
+    totalBalanceChange: number;
+    totalBalanceChangeUsd: number;
+}
+
+interface VisualizerConfig {
+    nodePrefix?: string;
+    showUsdValues?: boolean;
+    detailedTransactionInfo?: boolean;
+}
