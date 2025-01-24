@@ -2,8 +2,8 @@ import { Field, SmartContract, State, state, Permissions, TransactionVersion, me
 import { SecondaryZkApp } from "./SecondaryZkApp.js";
 
 export class ProofsOnlyZkApp extends SmartContract {
-    @state(Field) num = State<Field>();
-    @state(Field) calls = State<Field>();
+    @state(Field) num: State<Field> = State<Field>();
+    @state(Field) calls: State<Field> = State<Field>();
 
     async deploy() {
         await super.deploy();

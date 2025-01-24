@@ -1,0 +1,25 @@
+graph TB
+classDef zkapp fill:#e6e6fa,stroke:#483D8B,stroke-width:4px
+classDef normal fill:#B0E0E6,stroke:#4682B4,stroke-width:3px
+classDef negative fill:#FFB6C1,stroke:#CD5C5C,stroke-width:3px
+
+A0["B62qj2...ByVU19 <br/> Balance: 1 MINA ($0.66)"]:::zkapp
+A1["B62qpW...S5r6vn <br/> Balance: -100 MINA ($-66.44)"]:::negative
+A2["B62qqh...ADn4EV <br/> Balance: 99 MINA ($65.78)"]:::normal
+A3["B62qs2...aimNFT <br/> Balance: 0 MINA ($0.00)"]:::zkapp
+
+A1 --> |"100 MINA ($66.44)"| A0
+A1 --> |"100 MINA ($66.44)"| A2
+
+
+Bottom[ ]:::info
+subgraph TransactionInfo
+    TxHash["TX: 5JuCdm...7YcDpZ"]:::info
+    Memo["Memo: mint@zkgod 95"]:::info
+    Block["Block: 417615"]:::info
+    TxFee["Fee: 0.1 MINA ($0.07)"]:::info
+    TxStatus["Status: applied"]:::info
+    TxTime["Time: 2025-01-06T14:45:00.000Z"]:::info
+end
+style TransactionInfo fill:#F0F8FF,stroke:#4682B4,stroke-width:2px
+Bottom --> TxHash[ ]:::info

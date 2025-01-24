@@ -21,11 +21,14 @@
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "testw": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
     "lint": "npx eslint src/* --fix",
-    "trace": "tsc && node build/src/main.js"
+    "trace": "tsc && node build/src/main.js",
+    "visualize": "tsc && node --experimental-modules build/src/generate_png.js",
+    "generate-png": "npm run visualize && npx mmdc -i transaction.mmd -o transaction.png"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.16.4",
     "@babel/preset-typescript": "^7.16.0",
+    "@mermaid-js/mermaid-cli": "^11.4.2",
     "@types/jest": "^29.5.12",
     "@typescript-eslint/eslint-plugin": "^5.5.0",
     "@typescript-eslint/parser": "^5.5.0",
@@ -43,7 +46,6 @@
     "node": ">=18.14.0"
   },
   "dependencies": {
-    "mina-transaction-visualizer": "^0.1.0",
     "snarkyjs": "^0.12.1",
     "tree-crawl": "^1.2.2"
   }

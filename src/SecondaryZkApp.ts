@@ -1,7 +1,8 @@
 import { Field, SmartContract, State, state, Permissions, method } from "o1js";
 
 export class SecondaryZkApp extends SmartContract {
-    @state(Field) num = State<Field>();
+    @state(Field) num: State<Field> = State<Field>();
+
   
     async deploy() {
       await super.deploy();
