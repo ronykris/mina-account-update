@@ -41,13 +41,30 @@ interface TransactionEdge {
 
 interface TransactionState {
     nodes: Map<string, TransactionNode>;
-    edges: TransactionEdge[];
+    edges: Edge[];
     balanceStates: Map<string, number[]>;
     metadata: {
         totalProofs: number;
         totalSignatures: number;
         totalFees: string;
         accountUpdates: number;
+    };
+    relationships: Map<string, string[]>;
+}
+
+interface Edge {
+    id: string;
+    fromNode: string;
+    toNode: string;
+    operation: {
+        sequence: number;
+        type: string;
+        amount?: {
+            value: number;
+            denomination: string;
+        };
+        status: 'success' | 'rejected';
+        fee?: string;
     };
 }
 
@@ -68,4 +85,4 @@ interface NodeType {
 }
 
 
-export { TreeSnapshot, TreeOperation, ChangeLog, AUMetadata, TransactionEdge, TransactionNode, TransactionState, AccountType };
+export { TreeSnapshot, TreeOperation, ChangeLog, AUMetadata, Edge, TransactionNode, TransactionState, AccountType };

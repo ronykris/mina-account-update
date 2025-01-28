@@ -12,8 +12,4 @@ coverage
 # Never commit keys to Git!
 keys
 
-*.txt
-deploy*.json
-trace*.log
-mina-fungible-token/
-src/*
+mina-projects-test/

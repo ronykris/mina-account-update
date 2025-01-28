@@ -1,8 +1,9 @@
 import { AccountUpdate, PublicKey, Transaction } from 'o1js';
-import { TreeSnapshot, TreeOperation, ChangeLog, TransactionState, AUMetadata, AccountType } from './Interface'
+import { TreeSnapshot, TreeOperation, ChangeLog, TransactionState, AUMetadata, AccountType, Edge } from './Interface'
 
 export class AUTrace {
     private transactionState: TransactionState;
+    private currentSequence: number = 0;
 
     constructor() {
         this.transactionState = {
@@ -14,7 +15,8 @@ export class AUTrace {
                 totalSignatures: 0,
                 totalFees: '0',
                 accountUpdates: 0
-            }
+            },
+            relationships: new Map()
         };
     }
 
@@ -39,7 +41,7 @@ export class AUTrace {
         console.log(this.transactionState)
     }
 
-    private processAccountUpdate = (au: any): void => {
+    private processAccountUpdate = (au: AccountUpdate, parentAU?: AccountUpdate): void => {
         const auMetadata = this.extractAUMetadata(au);
         
         // Track signature/proof counts
@@ -58,6 +60,10 @@ export class AUTrace {
                 publicKey: auMetadata.publicKey,
                 contractType: this.extractContractType(au)
             });
+        }
+
+        if (parentAU) {
+            
         }
 
         // Track balance changes
@@ -171,4 +177,34 @@ export class AUTrace {
         currentBalance.push(Number(newBalance));
         this.transactionState.balanceStates.set(auMetadata.id, currentBalance);
     }
+
+    private addEdge = (fromAU: AccountUpdate, toAU: AccountUpdate, opType: string): void => {
+        this.currentSequence++;
+
+        const edge: Edge = {
+            id: `op${this.currentSequence}`,
+            fromNode: fromAU.id.toString(),
+            toNode: toAU.id.toString(),
+            operation: {
+                sequence: this.currentSequence,
+                type: opType,
+                status: 'success',                
+            }
+
+        }
+
+        if (fromAU.body?.balanceChange) {
+            const fee = BigInt(fromAU.body.balanceChange.toString());
+            if (fee < BigInt(0)) {
+                edge.operation.fee = fee.toString();
+                
+                edge.operation.amount = {
+                    value: Number(-fee),
+                    denomination: 'fee'
+                };
+            }
+        }
+
+        this.transactionState.edges.push(edge);
+    } 
 }
