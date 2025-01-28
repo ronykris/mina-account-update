@@ -143,8 +143,8 @@ export class AccountUpdateTrace {
     
 
     private compareAUTrees = (
-        oldAUArray: AccountUpdate[], 
-        newAUArray: AccountUpdate[],
+        oldAUArray: AccountUpdate[] | undefined | null, 
+        newAUArray: AccountUpdate[] | undefined | null,
         path: string = 'accountUpdate'
         //path: string = 'transaction'
       ): ChangeLog => {
@@ -152,8 +152,10 @@ export class AccountUpdateTrace {
           added: [], removed: [], updated: []
         }
         
-        const oldAUMap = new Map(oldAUArray.map((node) => [node.id, node]));
-        const newAUMap = new Map(newAUArray.map((node) => [node.id, node]));
+        const validOldAUArray = Array.isArray(oldAUArray) ? oldAUArray : [];
+        const validNewAUArray = Array.isArray(newAUArray) ? newAUArray : [];
+        const oldAUMap = new Map((validOldAUArray || []).map((node) => [node.id, node]));
+        const newAUMap = new Map((validNewAUArray || []).map((node) => [node.id, node]));
         
     
         const compareAUItemsRecursive = (a: AccountUpdate, b: AccountUpdate, path: string) => {
@@ -219,8 +221,9 @@ export class AccountUpdateTrace {
         }
         
         // Find removed and updated elements
-        for (const oldAUArrayItem of oldAUArray) {
-          const currentPath = `${path}[${oldAUArray.indexOf(oldAUArrayItem)}]`;
+      if (Array.isArray(oldAUArray) && oldAUArray.length > 0) {
+        for (const oldAUArrayItem of oldAUArray!) {
+          const currentPath = `${path}[${oldAUArray!.indexOf(oldAUArrayItem)}]`;
           if (!newAUMap.has(oldAUArrayItem.id)) {
             changes.removed.push({
               path: currentPath,
@@ -232,9 +235,11 @@ export class AccountUpdateTrace {
             compareAUItemsRecursive(oldAUArrayItem, newAUArrayItem, currentPath);
           }
         }
+      }
+        
     
-        for ( const newAUArrayItem of newAUArray) {
-          const currentPath = `${path}[${newAUArray.indexOf(newAUArrayItem)}]`
+    for ( const newAUArrayItem of newAUArray!) {
+          const currentPath = `${path}[${newAUArray!.indexOf(newAUArrayItem)}]`
           if (!oldAUMap.has(newAUArrayItem.id)) {
             changes.added.push({
               path: currentPath,
