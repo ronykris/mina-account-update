@@ -50,7 +50,7 @@ interface TransactionState {
         totalFees: string;
         accountUpdates: number;
     };
-    relationships: Map<string, string[]>;
+    relationships: Map<string, AccountUpdateRelationship>;  // Update this line
 }
 
 interface Edge {
@@ -60,11 +60,11 @@ interface Edge {
     operation: {
         sequence: number;
         type: string;
+        status: 'success' | 'rejected';
         amount?: {
             value: number;
             denomination: string;
         };
-        status: 'success' | 'rejected';
         fee?: string;
     };
 }
@@ -136,11 +136,18 @@ interface ParsedAccountUpdate {
 
 interface MethodAnalysis {
     name: string;
+    childCalls: {
+        contractMethod?: string;  // for inter-contract calls
+        internalMethod?: string;  // for internal method calls
+    }[];
+    stateChanges: {
+        field: string;
+        operation: 'set' | 'get';
+    }[];
     authorization: {
         requiresProof: boolean;
         requiresSignature: boolean;
     };
-    accountUpdates: MethodAccountUpdate[];
 }
 
 interface MethodAccountUpdate {
@@ -158,4 +165,30 @@ interface ContractMethod {
     accountUpdates: MethodAccountUpdate[];
 }
 
-export { TreeSnapshot, TreeOperation, ChangeLog, ContractMethod, MethodAccountUpdate, AUMetadata, Edge, TransactionNode, TransactionState, AccountType, ContractMetadata, MethodAnalysis, EnhancedTransactionState, ParsedAccountUpdate };
+interface ContractAnalysis {
+    name: string;
+    stateFields: {
+        name: string;
+        index: number;  // position in appState array
+    }[];
+    methods: MethodAnalysis[];
+    permissions: string[];
+}
+
+interface AccountUpdateRelationship {
+    id: string;
+    label: string;
+    parentId?: string;
+    children: string[];  // child AU ids
+    depth: number;      // callDepth from AU
+    method?: {
+        name: string;
+        contract: string;
+    };
+    stateChanges?: {
+        field: string;
+        value: any;
+    }[];
+}
+
+export { TreeSnapshot, AccountUpdateRelationship, TreeOperation, ContractAnalysis, ChangeLog, ContractMethod, MethodAccountUpdate, AUMetadata, Edge, TransactionNode, TransactionState, AccountType, ContractMetadata, MethodAnalysis, EnhancedTransactionState, ParsedAccountUpdate };

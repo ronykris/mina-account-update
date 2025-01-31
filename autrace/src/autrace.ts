@@ -1,11 +1,18 @@
-import { AccountUpdate, PublicKey, Transaction } from 'o1js';
-import { TreeSnapshot, TreeOperation, ChangeLog, TransactionState, AUMetadata, AccountType, Edge, EnhancedTransactionState, ParsedAccountUpdate, TransactionNode, MethodAnalysis, ContractMetadata, ContractMethod } from './Interface'
+import { AccountUpdate, PublicKey, SmartContract, Transaction } from 'o1js';
+import { TreeSnapshot, TreeOperation, ChangeLog, TransactionState, AUMetadata, AccountType, Edge, EnhancedTransactionState, ParsedAccountUpdate, TransactionNode, MethodAnalysis, ContractMetadata, ContractMethod, AccountUpdateRelationship } from './Interface'
+import { SmartContractAnalyzer } from './ContractAnalyser';
+import { AccountUpdateAnalyzer } from './AccountUpdateAnalyzer';
 
 export class AUTrace {
-    private transactionState: EnhancedTransactionState;
+    private transactionState: TransactionState;
     private currentSequence: number = 0;
+    private contractAnalyzer: SmartContractAnalyzer;
+    private auAnalyzer: AccountUpdateAnalyzer;
+
 
     constructor() {
+        this.auAnalyzer = new AccountUpdateAnalyzer();
+        this.contractAnalyzer = new SmartContractAnalyzer();
         this.transactionState = {
             nodes: new Map(),
             edges: [],
@@ -16,11 +23,54 @@ export class AUTrace {
                 totalFees: '0',
                 accountUpdates: 0
             },
-            relationships: new Map(),
-            contractMetadata: new Map()
+            relationships: new Map()
         };
+        
     }
 
+    public initializeContracts(contracts: SmartContract[]) {
+        contracts.forEach(contract => {
+            this.contractAnalyzer.analyzeContractInstance(contract);
+        });
+    }
+
+    public traverseTransaction = (transaction: any): void => {
+        if (!transaction) return;
+
+        const accountUpdates = transaction.transaction.accountUpdates || [];
+        this.transactionState.metadata.accountUpdates = accountUpdates.length;
+
+        accountUpdates.forEach((au: AccountUpdate) => {
+            this.processAccountUpdate(au);
+        });
+    }
+
+    private processAccountUpdate = (au: AccountUpdate): void => {
+        const auMetadata = this.extractAUMetadata(au);
+        
+        if (auMetadata.type === 'proof') {
+            this.transactionState.metadata.totalProofs++;
+        } else if (auMetadata.type === 'signature') {
+            this.transactionState.metadata.totalSignatures++;
+        }
+
+        if (!this.transactionState.nodes.has(auMetadata.id)) {
+            const nodeType = this.determineNodeType(au);
+            const node: TransactionNode = {
+                id: auMetadata.id,
+                type: nodeType,
+                label: auMetadata.label,
+                publicKey: auMetadata.publicKey,
+                contractType: this.extractContractType(au)
+            };
+            this.transactionState.nodes.set(auMetadata.id, node);
+        }
+
+        this.auAnalyzer.processAccountUpdate(au);
+        this.updateBalanceState(auMetadata);
+    }
+
+    /*
     private analyzeContractMethod(methodInfo: any): MethodAnalysis {
         const methodAnalysis: MethodAnalysis = {
             name: methodInfo.name,
@@ -125,119 +175,7 @@ export class AUTrace {
         return [];
     }
 
-    public traverseTransaction = (transaction: any): void => {
-        if (!transaction) return;
-
-        const accountUpdates = (transaction.transaction.accountUpdates || []) as Array<ParsedAccountUpdate>;
-        //const accountUpdates: []= transaction.transaction.accountUpdates || [];
-        //console.log(accountUpdates)
-        
-        const auCount = accountUpdates.length;
-        this.transactionState.metadata.accountUpdates = auCount
-
-        //First pass: Collect all nodes
-        accountUpdates.forEach((au: any) => {
-            this.processAccountUpdate(au);
-        });
-
-        type DepthGroups = {
-            [depth: number]: typeof accountUpdates;
-        };
-
-        // Second pass: Build edges and track relationships
-        const ausByDepth = accountUpdates.reduce<DepthGroups>((groups, au) => {
-            const depth = au.body?.callDepth || 0;
-            if (!groups[depth]) {
-                groups[depth] = [];
-            }
-            groups[depth].push(au);
-            return groups;
-        }, {})
-
-        Object.keys(ausByDepth)
-        .sort((a, b) => Number(a) - Number(b))
-        .forEach(depth => {
-            ausByDepth[Number(depth)].forEach(au => {
-                if (Number(depth) > 0) {
-                    const parentDepth = Number(depth) - 1;
-                    const potentialParents = ausByDepth[parentDepth] || [];
-                    
-                    const parent = this.findParentUpdate(au, potentialParents);
-                    if (parent) {
-                        const operationType = au.lazyAuthorization?.methodName || 
-                                           (au.body?.balanceChange ? 'transfer' : 'method');
-                        this.addEdge(parent, au, operationType);
-                    }
-                }
-            });
-        });
-        // Update metadata with final counts
-        this.transactionState.metadata.totalFees = Array.from(this.transactionState.balanceStates.entries())
-            .reduce((total, [_, changes]) => {
-                const lastChange = changes[changes.length - 1];
-                return total + (lastChange < 0 ? BigInt(lastChange) : BigInt(0));
-            }, BigInt(0))
-            .toString();
-
-        /*console.log('Transaction State:', {
-            nodes: Array.from(this.transactionState.nodes.entries()),
-            edges: this.transactionState.edges,
-            metadata: this.transactionState.metadata,
-            contractMetadata: Array.from(this.transactionState.contractMetadata.entries())
-        });*/
-    }
-
-    private processAccountUpdate = (au: AccountUpdate): void => {
-        const auMetadata = this.extractAUMetadata(au);
-        
-        // Existing tracking logic...
-        if (auMetadata.type === 'proof') {
-            this.transactionState.metadata.totalProofs++;
-        } else if (auMetadata.type === 'signature') {
-            this.transactionState.metadata.totalSignatures++;
-        }
-
-        // Add node with enhanced contract metadata
-        if (!this.transactionState.nodes.has(auMetadata.id)) {
-            const nodeType = this.determineNodeType(au);
-            const node: TransactionNode = {
-                id: auMetadata.id,
-                type: nodeType,
-                label: auMetadata.label,
-                publicKey: auMetadata.publicKey,
-                contractType: this.extractContractType(au)
-            }
-
-            /*if (nodeType === 'contract') {
-                if (au.body?.update?.verificationKey?.value?.data) {
-                    const contractMetadata: ContractMetadata = {
-                        methods: [this.analyzeContractMethod(au)],
-                        state: this.analyzeContractState(au)
-                    };
-                    this.transactionState.contractMetadata.set(auMetadata.id, contractMetadata);
-                    node.contractMetadata = contractMetadata;
-                }
-            }*/
-            if (nodeType === 'contract') {
-                this.extractContractMetadata(au);
-                node.contractMetadata = this.transactionState.contractMetadata.get(auMetadata.id);
-            }
-            
-            this.transactionState.nodes.set(auMetadata.id, node);
-            
-        }
-
-        this.updateBalanceState(auMetadata);
-
-        /*// Update edge creation logic to include method context
-        if (au.body.callDepth > 0) {
-            const parentAU = this.findParentUpdate(au);
-            if (parentAU) {
-                const methodName = au.lazyAuthorization?.methodName || 'unknown';
-                this.addEdge(parentAU, au, methodName);
-            }
-        }*/
-    }
+    
 
     private findParentUpdate(au: ParsedAccountUpdate, potentialParents: ParsedAccountUpdate[]): ParsedAccountUpdate | undefined {
         // First, try to find parent by method call
@@ -261,38 +199,8 @@ export class AUTrace {
         }
     
         return undefined;
-    }
-
-    /*private processAccountUpdate = (au: AccountUpdate): void => {
-        const auMetadata = this.extractAUMetadata(au);
-        
-        // Track signature/proof counts
-        if (auMetadata.type === 'proof') {
-            this.transactionState.metadata.totalProofs++;
-        } else if (auMetadata.type === 'signature') {
-            this.transactionState.metadata.totalSignatures++;
-        }
-
-        // Add node if it does not exist
-        if (!this.transactionState.nodes.has(auMetadata.id)) {
-            this.transactionState.nodes.set(auMetadata.id, {
-                id: auMetadata.id,
-                type: this.determineNodeType(au),
-                label: auMetadata.label,
-                publicKey: auMetadata.publicKey,
-                contractType: this.extractContractType(au)
-            });
-        }
-
-        // Track balance changes
-        this.updateBalanceState(auMetadata);
-
-        // Create edges based on balance changes
-        const balanceChange = BigInt(au.body.balanceChange.toString());
-        if (balanceChange < BigInt(0)) {
-            this.addEdge(au, { id: au.body.mayUseToken.tokenOwner }, 'transfer');
-    }
     }*/
+
 
     private extractAUMetadata = (au: any): AUMetadata => {
         return {
@@ -402,78 +310,47 @@ export class AUTrace {
         this.transactionState.balanceStates.set(auMetadata.id, currentBalance);
     }
 
-    private addEdge = (fromAU: ParsedAccountUpdate, toAU: ParsedAccountUpdate, opType: string): void => {
-        this.currentSequence++;
-
-        const edge: Edge = {
-            id: `op${this.currentSequence}`,
-            fromNode: fromAU.id.toString(),
-            toNode: toAU.id.toString(),
-            operation: {
-                sequence: this.currentSequence,
-                type: opType,
-                status: 'success',                
-            }
-
-        }
-
-        if (fromAU.body?.balanceChange) {
-            const fee = BigInt(fromAU.body.balanceChange.toString());
-            if (fee < BigInt(0)) {
-                edge.operation.fee = fee.toString();
-                
-                edge.operation.amount = {
-                    value: Number(-fee),
-                    denomination: 'fee'
+    private buildEdgesFromRelationships(relationships: Map<string, AccountUpdateRelationship>): Edge[] {
+        const edges: Edge[] = [];
+        let sequence = 1;
+    
+        relationships.forEach(relationship => {
+            if (relationship.parentId) {
+                const edge: Edge = {
+                    id: `op${sequence++}`,
+                    fromNode: relationship.parentId,
+                    toNode: relationship.id,
+                    operation: {
+                        sequence,
+                        type: relationship.method?.name || 'update',
+                        status: 'success'
+                    }
                 };
+    
+                if (relationship.stateChanges?.length) {
+                    edge.operation.amount = {
+                        value: Number(relationship.stateChanges[0].value),
+                        denomination: 'state'
+                    };
+                }
+    
+                edges.push(edge);
             }
-        }
-
-        this.transactionState.edges.push(edge);
-    } 
+        });
+    
+        return edges;
+    }
 
     public getTransactionState = (): TransactionState => {
+        const auRelationships = this.auAnalyzer.getRelationships();
+        this.transactionState.relationships = auRelationships;
 
-        const formattedNodes = new Map();
-    this.transactionState.nodes.forEach((node, key) => {
-        formattedNodes.set(key, {
-            ...node,
-            contractMetadata: node.contractMetadata ? {
-                methods: node.contractMetadata.methods.map(method => ({
-                    name: method.name,
-                    authorization: {
-                        requiresProof: method.authorization.requiresProof,
-                        requiresSignature: method.authorization.requiresSignature
-                    },
-                    accountUpdates: method.accountUpdates.map(update => ({
-                        creates: update.creates,
-                        requiresSignature: update.requiresSignature,
-                        balanceChanges: update.balanceChanges
-                    }))
-                })),
-                state: {
-                    fields: [...node.contractMetadata.state.fields],
-                    hasOnChainState: node.contractMetadata.state.hasOnChainState
-                }
-            } : undefined
-        });
-    });
-
-    console.log(formattedNodes)
-        
-        const state = {
-            nodes: formattedNodes,
-            edges: this.transactionState.edges,
+        return {
+            nodes: this.transactionState.nodes,
+            edges: this.buildEdgesFromRelationships(auRelationships),
             balanceStates: this.transactionState.balanceStates,
-            metadata: {
-                totalProofs: this.transactionState.metadata.totalProofs,
-                totalSignatures: this.transactionState.metadata.totalSignatures,
-                totalFees: this.transactionState.metadata.totalFees,
-                accountUpdates: this.transactionState.metadata.accountUpdates
-            },
-            relationships: this.transactionState.relationships
+            metadata: this.transactionState.metadata,
+            relationships: auRelationships
         };
-    
-        return state
     }
 }
