@@ -27,6 +27,7 @@ interface TransactionNode {
     role?: string;
     contractType?: string;
     features?: Record<string, any>;
+    contractMetadata?: ContractMetadata;
 }
 
 interface TransactionEdge {
@@ -84,5 +85,77 @@ interface NodeType {
     type: AccountType;
 }
 
+/*interface ContractMetadata {
+    methods: {
+        name: string;
+        authorization: {
+            requiresProof: boolean;
+            requiresSignature: boolean;
+        };
+        accountUpdates: {
+            creates: boolean;
+            requiresSignature: boolean;
+            balanceChanges: boolean;
+        }[];
+    }[];
+    state: {
+        fields: string[];
+        hasOnChainState: boolean;
+    };
+}*/
 
-export { TreeSnapshot, TreeOperation, ChangeLog, AUMetadata, Edge, TransactionNode, TransactionState, AccountType };
+interface ContractMetadata {
+    methods: MethodAnalysis[];
+    state: {
+        fields: string[];
+        hasOnChainState: boolean;
+    };
+}
+
+interface EnhancedTransactionState extends TransactionState {
+    contractMetadata: Map<string, ContractMetadata>;
+}
+
+interface AccountUpdateBody {
+    callDepth?: number;
+    balanceChange?: any;
+    publicKey?: any;
+    mayUseToken?: any;
+}
+
+interface ParsedAccountUpdate {
+    id: string | number;
+    label?: string;
+    body: AccountUpdateBody;
+    lazyAuthorization?: {
+        kind?: string;
+        methodName?: string;
+    };
+    caller?: string;
+}
+
+interface MethodAnalysis {
+    name: string;
+    authorization: {
+        requiresProof: boolean;
+        requiresSignature: boolean;
+    };
+    accountUpdates: MethodAccountUpdate[];
+}
+
+interface MethodAccountUpdate {
+    creates: boolean;
+    requiresSignature: boolean;
+    balanceChanges: boolean;
+}
+
+interface ContractMethod {
+    name: string;
+    authorization: {
+        requiresProof: boolean;
+        requiresSignature: boolean;
+    };
+    accountUpdates: MethodAccountUpdate[];
+}
+
+export { TreeSnapshot, TreeOperation, ChangeLog, ContractMethod, MethodAccountUpdate, AUMetadata, Edge, TransactionNode, TransactionState, AccountType, ContractMetadata, MethodAnalysis, EnhancedTransactionState, ParsedAccountUpdate };
