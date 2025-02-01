@@ -176,19 +176,26 @@ interface ContractAnalysis {
 }
 
 interface AccountUpdateRelationship {
-    id: string;
-    label: string;
-    parentId?: string;
-    children: string[];  // child AU ids
-    depth: number;      // callDepth from AU
-    method?: {
-        name: string;
-        contract: string;
-    };
-    stateChanges?: {
-        field: string;
-        value: any;
-    }[];
+    
+        id: string;
+        label: string;
+        parentId?: string;
+        children: string[];
+        depth: number;
+        method?: {
+            name: string;
+            contract: string;
+        };
+        stateChanges?: {
+            field: string;
+            value: any;
+        }[];
+    
 }
 
-export { TreeSnapshot, AccountUpdateRelationship, TreeOperation, ContractAnalysis, ChangeLog, ContractMethod, MethodAccountUpdate, AUMetadata, Edge, TransactionNode, TransactionState, AccountType, ContractMetadata, MethodAnalysis, EnhancedTransactionState, ParsedAccountUpdate };
+interface PlainRelationshipMap {
+    [key: string]: AccountUpdateRelationship;
+}
+
+
+export { TreeSnapshot, PlainRelationshipMap, AccountUpdateRelationship, TreeOperation, ContractAnalysis, ChangeLog, ContractMethod, MethodAccountUpdate, AUMetadata, Edge, TransactionNode, TransactionState, AccountType, ContractMetadata, MethodAnalysis, EnhancedTransactionState, ParsedAccountUpdate };

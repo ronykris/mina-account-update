@@ -1,7 +1,7 @@
 import { AccountUpdate, PublicKey, SmartContract, Transaction } from 'o1js';
 import { TreeSnapshot, TreeOperation, ChangeLog, TransactionState, AUMetadata, AccountType, Edge, EnhancedTransactionState, ParsedAccountUpdate, TransactionNode, MethodAnalysis, ContractMetadata, ContractMethod, AccountUpdateRelationship } from './Interface'
-import { SmartContractAnalyzer } from './ContractAnalyser';
-import { AccountUpdateAnalyzer } from './AccountUpdateAnalyzer';
+import { SmartContractAnalyzer } from './ContractAnalyser.js';
+import { AccountUpdateAnalyzer } from './AccountUpdateAnalyzer.js';
 
 export class AUTrace {
     private transactionState: TransactionState;
@@ -34,7 +34,7 @@ export class AUTrace {
         });
     }
 
-    public traverseTransaction = (transaction: any): void => {
+    private traverseTransaction = (transaction: any): void => {
         if (!transaction) return;
 
         const accountUpdates = transaction.transaction.accountUpdates || [];
@@ -199,7 +199,7 @@ export class AUTrace {
                 if (relationship.stateChanges?.length) {
                     edge.operation.amount = {
                         value: Number(relationship.stateChanges[0].value),
-                        denomination: 'state'
+                        denomination: 'USD'
                     };
                 }
     
@@ -210,16 +210,89 @@ export class AUTrace {
         return edges;
     }
 
-    public getTransactionState = (): TransactionState => {
-        const auRelationships = this.auAnalyzer.getRelationships();
-        this.transactionState.relationships = auRelationships;
-
-        return {
-            nodes: this.transactionState.nodes,
-            edges: this.buildEdgesFromRelationships(auRelationships),
-            balanceStates: this.transactionState.balanceStates,
-            metadata: this.transactionState.metadata,
-            relationships: auRelationships
+    public getTransactionState = (transaction: any): TransactionState => {
+        
+        this.transactionState = {
+            nodes: new Map(),
+            edges: [],
+            balanceStates: new Map(),
+            metadata: {
+                totalProofs: 0,
+                totalSignatures: 0,
+                totalFees: '0',
+                accountUpdates: 0
+            },
+            relationships: new Map()
         };
+
+        this.traverseTransaction(transaction);
+
+        const auRelationships = this.auAnalyzer.getRelationships();
+        const plainRelationships = new Map<string, AccountUpdateRelationship>();
+        auRelationships.forEach((rel, key) => {
+            // Flatten children
+            const expandedChildren = Array.isArray(rel.children) && rel.children.length > 0
+                ? rel.children.join(', ')
+                : '';
+            
+            // Flatten method as a string
+            const expandedMethod = rel.method
+                ? `Contract: ${rel.method.contract ?? ''}, Method: ${rel.method.name ?? ''}`
+                : 'N/A';
+    
+            // Flatten stateChanges as a single string
+            const expandedStateChanges = Array.isArray(rel.stateChanges)
+                ? rel.stateChanges
+                      .map(change =>
+                          `Field: ${change.field ?? ''}, IsSome: ${change.value?.isSome ?? false}, Value: ${change.value?.value ?? '0'}`
+                      )
+                      .join(' | ')  // Join the flattened array into a single string
+                : 'No State Changes';
+    
+            plainRelationships.set(key, {
+                ...rel,
+                children: expandedChildren as any,
+                method: expandedMethod as any,
+                stateChanges: expandedStateChanges as any // Now a single string
+            });
+        });
+    
+        const expandedEdges = this.buildEdgesFromRelationships(auRelationships)
+            .map(edge => {
+                const operation = edge.operation;
+                const amountValue = (typeof operation.amount?.value === 'number' && !isNaN(operation.amount.value))
+                    ? operation.amount.value
+                    : 0;
+
+                const denomination = operation.amount?.denomination || 'unknown';
+
+                // Build the amount string if amount exists
+                const amount = operation.amount
+                    ? `, Amount: ${amountValue} ${denomination}`
+                    : '';
+
+                // Validate fee
+                const fee = (typeof operation.fee === 'number' || typeof operation.fee === 'string')
+                    ? `, Fee: ${operation.fee}`
+                    : '';
+
+                const flattenedOperation = `Sequence: ${operation.sequence ?? 'N/A'}, Type: ${operation.type ?? 'N/A'}, Status: ${operation.status ?? 'N/A'}${amount}${fee}`;
+
+                return {
+                    id: edge.id,
+                    fromNode: edge.fromNode,
+                    toNode: edge.toNode,
+                    operation: flattenedOperation
+                };
+            });
+
+
+            return {
+                nodes: this.transactionState.nodes,
+                edges: expandedEdges as any,
+                balanceStates: this.transactionState.balanceStates,
+                metadata: this.transactionState.metadata,
+                relationships: plainRelationships
+            };
     }
 }
