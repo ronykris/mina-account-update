@@ -123,7 +123,7 @@ export class AUTrace {
         // 1. Check the label for contract indicators
         if (au.label) {
             const labelLower = au.label.toLowerCase();
-            console.log('Label: ', labelLower)
+            //console.log('Label: ', labelLower)
             if (labelLower.includes('contract') || 
                 labelLower.includes('zkapp') ||
                 labelLower.includes('deploy')) {            
@@ -210,8 +210,7 @@ export class AUTrace {
         return edges;
     }
 
-    public getTransactionState = (transaction: any): TransactionState => {
-        
+    public clearTransactionState = (): void => {
         this.transactionState = {
             nodes: new Map(),
             edges: [],
@@ -224,36 +223,45 @@ export class AUTrace {
             },
             relationships: new Map()
         };
+    };
+
+    public getTransactionState = (transaction: any): TransactionState => {
+        
+        if (!this.transactionState) {
+            this.clearTransactionState();
+        } else {
+            this.transactionState.nodes = new Map();
+            this.transactionState.edges = [];
+            this.transactionState.relationships = new Map();
+        }
 
         this.traverseTransaction(transaction);
 
         const auRelationships = this.auAnalyzer.getRelationships();
         const plainRelationships = new Map<string, AccountUpdateRelationship>();
         auRelationships.forEach((rel, key) => {
-            // Flatten children
+            
             const expandedChildren = Array.isArray(rel.children) && rel.children.length > 0
                 ? rel.children.join(', ')
                 : '';
             
-            // Flatten method as a string
             const expandedMethod = rel.method
                 ? `Contract: ${rel.method.contract ?? ''}, Method: ${rel.method.name ?? ''}`
                 : 'N/A';
     
-            // Flatten stateChanges as a single string
             const expandedStateChanges = Array.isArray(rel.stateChanges)
                 ? rel.stateChanges
                       .map(change =>
                           `Field: ${change.field ?? ''}, IsSome: ${change.value?.isSome ?? false}, Value: ${change.value?.value ?? '0'}`
                       )
-                      .join(' | ')  // Join the flattened array into a single string
+                      .join(' | ')
                 : 'No State Changes';
     
             plainRelationships.set(key, {
                 ...rel,
                 children: expandedChildren as any,
                 method: expandedMethod as any,
-                stateChanges: expandedStateChanges as any // Now a single string
+                stateChanges: expandedStateChanges as any
             });
         });
     
@@ -284,8 +292,8 @@ export class AUTrace {
                     toNode: edge.toNode,
                     operation: flattenedOperation
                 };
-            });
-
+            });          
+            
 
             return {
                 nodes: this.transactionState.nodes,
