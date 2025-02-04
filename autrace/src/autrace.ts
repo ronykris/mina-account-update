@@ -8,6 +8,7 @@ export class AUTrace {
     private currentSequence: number = 0;
     private contractAnalyzer: SmartContractAnalyzer;
     private auAnalyzer: AccountUpdateAnalyzer;
+    private transactionSnapshots: any[] = [];
 
 
     constructor() {
@@ -292,15 +293,38 @@ export class AUTrace {
                     toNode: edge.toNode,
                     operation: flattenedOperation
                 };
-            });          
+            });     
             
+            /*const state = {
+                nodes: Object.fromEntries(this.transactionState.nodes),
+                edges: expandedEdges,
+                balanceStates: Object.fromEntries(this.transactionState.balanceStates),
+                metadata: this.transactionState.metadata,
+                relationships: Object.fromEntries(plainRelationships)
+            };*/
 
-            return {
+            const finalState = {
                 nodes: this.transactionState.nodes,
                 edges: expandedEdges as any,
                 balanceStates: this.transactionState.balanceStates,
                 metadata: this.transactionState.metadata,
                 relationships: plainRelationships
-            };
+            }
+
+        //this.transactionSnapshots = [...this.transactionSnapshots, state];
+        this.transactionSnapshots = [...this.transactionSnapshots, finalState];
+        
+        return {
+            nodes: this.transactionState.nodes,
+            edges: expandedEdges as any,
+            balanceStates: this.transactionState.balanceStates,
+            metadata: this.transactionState.metadata,
+            relationships: plainRelationships
+        };
+
+    }
+
+    public getStateHistory() {
+        return this.transactionSnapshots;
     }
 }
