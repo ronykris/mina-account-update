@@ -1,5 +1,5 @@
 import { AccountUpdate } from "o1js";
-import { AccountUpdateRelationship } from "./Interface";
+import { AccountUpdateRelationship } from "./Interface.js";
 
 export class AccountUpdateAnalyzer {
     private auRelationships: Map<string, AccountUpdateRelationship>;
@@ -54,8 +54,8 @@ export class AccountUpdateAnalyzer {
         const parts = au.label.split('.');
         if (parts.length >= 2) {
             return {
-                contract: parts[0],
-                name: parts[1].replace('()', '')
+                contract: parts[0]!,
+                name: parts[1]!.replace('()', '')
             };
         }
         return undefined;

@@ -197,5 +197,23 @@ interface PlainRelationshipMap {
     [key: string]: AccountUpdateRelationship;
 }
 
+interface EntityInfo {
+    id: string;
+    type: string;
+    name: string;
+    operations: Set<string>;
+    publicKey: string;
+    contractType?: string;
+    labels: Set<string>;
+}
 
-export { TreeSnapshot, PlainRelationshipMap, AccountUpdateRelationship, TreeOperation, ContractAnalysis, ChangeLog, ContractMethod, MethodAccountUpdate, AUMetadata, Edge, TransactionNode, TransactionState, AccountType, ContractMetadata, MethodAnalysis, EnhancedTransactionState, ParsedAccountUpdate };
+interface FlowOperation {
+    from: string;
+    to: string;
+    action: string;
+    fee?: string;
+    status?: string;
+    parameters?: Record<string, string>;
+}
+
+export { TreeSnapshot, EntityInfo, FlowOperation, PlainRelationshipMap, AccountUpdateRelationship, TreeOperation, ContractAnalysis, ChangeLog, ContractMethod, MethodAccountUpdate, AUMetadata, Edge, TransactionNode, TransactionState, AccountType, ContractMetadata, MethodAnalysis, EnhancedTransactionState, ParsedAccountUpdate };

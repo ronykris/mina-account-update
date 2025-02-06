@@ -1,11 +1,10 @@
-import { AccountUpdate, PublicKey, SmartContract, Transaction } from 'o1js';
-import { TreeSnapshot, TreeOperation, ChangeLog, TransactionState, AUMetadata, AccountType, Edge, EnhancedTransactionState, ParsedAccountUpdate, TransactionNode, MethodAnalysis, ContractMetadata, ContractMethod, AccountUpdateRelationship } from './Interface'
+import { AccountUpdate, SmartContract } from 'o1js';
+import { TreeSnapshot, TreeOperation, ChangeLog, TransactionState, AUMetadata, AccountType, Edge, EnhancedTransactionState, ParsedAccountUpdate, TransactionNode, MethodAnalysis, ContractMetadata, ContractMethod, AccountUpdateRelationship } from './Interface.js'
 import { SmartContractAnalyzer } from './ContractAnalyser.js';
 import { AccountUpdateAnalyzer } from './AccountUpdateAnalyzer.js';
 
 export class AUTrace {
     private transactionState: TransactionState;
-    private currentSequence: number = 0;
     private contractAnalyzer: SmartContractAnalyzer;
     private auAnalyzer: AccountUpdateAnalyzer;
     private transactionSnapshots: any[] = [];
@@ -90,7 +89,7 @@ export class AUTrace {
         return 'none';
     }
 
-    private extractContractType(au: AccountUpdate): string | undefined {
+    private extractContractType = (au: AccountUpdate): string | undefined => {
         if (au.label) {
             return au.label
         }
@@ -107,6 +106,7 @@ export class AUTrace {
             if (au.label.includes('ZkApp')) {
                 return 'SmartContract';
             }*/
+        return undefined
     }
 
     
@@ -199,7 +199,7 @@ export class AUTrace {
     
                 if (relationship.stateChanges?.length) {
                     edge.operation.amount = {
-                        value: Number(relationship.stateChanges[0].value),
+                        value: Number(relationship.stateChanges[0]!.value!),
                         denomination: 'USD'
                     };
                 }

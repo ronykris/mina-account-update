@@ -1,5 +1,5 @@
 import { SmartContract } from "o1js";
-import { ContractAnalysis, MethodAnalysis } from "./Interface";
+import { ContractAnalysis, MethodAnalysis } from "./Interface.js";
 
 export class SmartContractAnalyzer {
     private contracts: Map<string, ContractAnalysis>;
@@ -161,7 +161,7 @@ export class SmartContractAnalyzer {
                         const [childContract, childMethod] = call.contractMethod.split('.');
                         contractRelations.children.push({
                             contract: childContract,
-                            method: childMethod
+                            method: childMethod!
                         });
                     } else if (call.internalMethod) {
                         contractRelations.children.push({
