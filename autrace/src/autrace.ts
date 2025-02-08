@@ -1,11 +1,12 @@
 import { AccountUpdate, SmartContract } from 'o1js';
-import { TreeSnapshot, TreeOperation, ChangeLog, TransactionState, AUMetadata, AccountType, Edge, EnhancedTransactionState, ParsedAccountUpdate, TransactionNode, MethodAnalysis, ContractMetadata, ContractMethod, AccountUpdateRelationship } from './Interface.js'
+import { TreeSnapshot, TreeOperation, ChangeLog, TransactionState, AUMetadata, AccountType, Edge, EnhancedTransactionState, ParsedAccountUpdate, TransactionNode, MethodAnalysis, ContractMetadata, ContractMethod, AccountUpdateRelationship, ContractAnalysis } from './Interface.js'
 import { SmartContractAnalyzer } from './ContractAnalyser.js';
 import { AccountUpdateAnalyzer } from './AccountUpdateAnalyzer.js';
 
 export class AUTrace {
     private transactionState: TransactionState;
     private contractAnalyzer: SmartContractAnalyzer;
+    private contractAnalysis: Map<string, ContractAnalysis>;
     private auAnalyzer: AccountUpdateAnalyzer;
     private transactionSnapshots: any[] = [];
 
@@ -13,6 +14,7 @@ export class AUTrace {
     constructor() {
         this.auAnalyzer = new AccountUpdateAnalyzer();
         this.contractAnalyzer = new SmartContractAnalyzer();
+        this.contractAnalysis = new Map();
         this.transactionState = {
             nodes: new Map(),
             edges: [],
@@ -32,6 +34,15 @@ export class AUTrace {
         contracts.forEach(contract => {
             this.contractAnalyzer.analyzeContractInstance(contract);
         });
+        this.contractAnalysis = this.contractAnalyzer.getContracts();
+    }
+
+    public getContractAnalysis(): Map<string, ContractAnalysis> {
+        return this.contractAnalysis;
+    }
+
+    public getContractAnalysisFor(contractName: string): ContractAnalysis | undefined {
+        return this.contractAnalysis.get(contractName);
     }
 
     private traverseTransaction = (transaction: any): void => {
@@ -242,6 +253,12 @@ export class AUTrace {
         const plainRelationships = new Map<string, AccountUpdateRelationship>();
         auRelationships.forEach((rel, key) => {
             
+            const contractName = rel.method?.contract || '';
+            const contractAnalysis = this.contractAnalyzer.getContract(contractName);
+            const stateNames = contractAnalysis 
+                ? contractAnalysis.stateFields.map(f => f.name).join(', ')
+                : '';
+
             const expandedChildren = Array.isArray(rel.children) && rel.children.length > 0
                 ? rel.children.join(', ')
                 : '';
@@ -262,6 +279,7 @@ export class AUTrace {
                 ...rel,
                 children: expandedChildren as any,
                 method: expandedMethod as any,
+                onChainStates: stateNames,
                 stateChanges: expandedStateChanges as any
             });
         });

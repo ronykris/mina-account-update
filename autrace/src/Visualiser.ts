@@ -17,9 +17,51 @@ export class AUVisualizer {
     private getUniqueNodeId = (id: string, stateIndex: number): string => {
         return `N${id.replace(/[^0-9]/g, '')}${stateIndex}`;
     }
-
+    /*private getUniqueNodeId(id: string): string {
+        return `N${id.replace(/[^0-9]/g, '')}`;
+    }*/
     private formatLabel = (relationship: any): string => {
         return relationship?.label?.replace(/[()]/g, '') || 'Unknown';
+    }
+
+    private getNodeStyle(node: any): string {
+        switch (node.type) {
+            case 'account':
+                return 'fill:#B3E0FF,stroke:#333,stroke-width:2px';
+            case 'contract':
+                return 'fill:#DDA0DD,stroke:#333,stroke-width:2px';
+            default:
+                return 'fill:#90EE90,stroke:#333,stroke-width:2px';
+        }
+    }
+
+    private formatEdgeLabel(operation: string): string {
+        try {
+            const parts = operation.split(',').map(p => p.trim());
+            let sequence = '', type = '', amount = '', fee = '';
+            
+            parts.forEach(part => {
+                if (part.toLowerCase().includes('sequence')) {
+                    sequence = part.split(':')[1]?.trim() || '';
+                }
+                if (part.toLowerCase().includes('type')) {
+                    type = part.split(':')[1]?.trim() || '';
+                }
+                if (part.toLowerCase().includes('amount')) {
+                    amount = part.split(':')[1]?.trim() || '';
+                }
+                if (part.toLowerCase().includes('fee')) {
+                    fee = part.split(':')[1]?.trim() || '';
+                }
+            });
+
+            let label = `${sequence})${type}`;
+            if (amount) label += ` ${amount}`;
+            if (fee) label += ` fee: ${fee}`;
+            return label;
+        } catch (error) {
+            return operation;
+        }
     }
 
     private extractOperationDetails = (operation: string): { sequence: string, type: string } => {
@@ -61,7 +103,7 @@ export class AUVisualizer {
                 const color = (node.type === 'account') ? '#lightblue' : '#purple';
                 
                 subgraph += `        ${nodeId}["${label}"]\n`;
-                subgraph += `        style ${nodeId} fill:${color}\n`;
+                subgraph += `        style ${nodeId} fill:${color},width:300px,height:50px\n`;
             }
         });
 
@@ -238,9 +280,18 @@ export class AUVisualizer {
         return md;
     }
 
-
     public generateMermaidCode = (): string => {
-        let mermaidCode = 'flowchart TB\n';
+        let mermaidCode = `%%{init: {
+            'theme': 'base',
+            'themeVariables': {
+                'fontSize': '14px',
+                'fontFamily': 'arial',
+                'nodeSpacing': 50,
+                'rankSpacing': 50
+            }
+        }}%%\n`;
+
+        mermaidCode += 'flowchart TB\n';
         mermaidCode += '    %% Global styles\n';
         mermaidCode += '    classDef accountNode fill:#lightblue,stroke:#333,stroke-width:2px\n';
         mermaidCode += '    classDef contractNode fill:#purple,stroke:#333,stroke-width:2px\n\n';
@@ -254,6 +305,57 @@ export class AUVisualizer {
     
         return mermaidCode;
     }
+
+    /*public generateMermaidCode(): string {
+        let mermaidCode = `%%{init: {
+            'theme': 'base',
+            'themeVariables': {
+                'fontSize': '14px',
+                'fontFamily': 'arial',
+                'nodeSpacing': 150,
+                'rankSpacing': 100
+            }
+        }}%%\n`;
+        mermaidCode += 'flowchart LR\n';
+
+        const processedNodes = new Set();
+        const edges: string[] = [];
+
+        // Process all states
+        this.stateHistory.forEach(state => {
+            // Add nodes
+            state.nodes.forEach((node: any, id: string) => {
+                if (!processedNodes.has(id)) {
+                    const nodeId = this.getUniqueNodeId(id);
+                    const relationship = state.relationships.get(id);
+                    const label = this.formatLabel(relationship);
+                    const style = this.getNodeStyle(node);
+                    
+                    mermaidCode += `    ${nodeId}["${label}\\n${node.publicKey?.substring(0, 10)}..."]\n`;
+                    mermaidCode += `    style ${nodeId} ${style}\n`;
+                    processedNodes.add(id);
+                }
+            });
+
+            // Collect edges
+            if (Array.isArray(state.edges)) {
+                state.edges.forEach((edge: any) => {
+                    const fromId = this.getUniqueNodeId(edge.fromNode);
+                    const toId = this.getUniqueNodeId(edge.toNode);
+                    const label = this.formatEdgeLabel(edge.operation);
+                    edges.push(`    ${fromId} -->|"${label}"| ${toId}\n`);
+                });
+            }
+        });
+
+        // Add all edges after nodes
+        edges.forEach(edge => {
+            mermaidCode += edge;
+        });
+
+        return mermaidCode;
+    }*/
+
 
     public generateMarkdown(): string {
         let markdown = '# Account Update State History\n\n';

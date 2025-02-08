@@ -186,6 +186,7 @@ interface AccountUpdateRelationship {
             name: string;
             contract: string;
         };
+        onChainStates?: string;
         stateChanges?: {
             field: string;
             value: any;

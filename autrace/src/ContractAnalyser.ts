@@ -1,4 +1,4 @@
-import { SmartContract } from "o1js";
+import { SmartContract, State, state } from "o1js";
 import { ContractAnalysis, MethodAnalysis } from "./Interface.js";
 
 export class SmartContractAnalyzer {
@@ -28,22 +28,31 @@ export class SmartContractAnalyzer {
             permissions
         });
     }
-    
 
+    public getContracts(): Map<string, ContractAnalysis> {
+        return this.contracts;
+    }
+
+    public getContract(contractName: string): ContractAnalysis | undefined {
+        return this.contracts.get(contractName);
+    }
+    
     private extractStateFields = (contractClass: any): { name: string; index: number; }[] => {
         const stateFields: { name: string; index: number; }[] = [];
         let stateIndex = 0;
 
         Object.getOwnPropertyNames(contractClass.prototype).forEach(prop => {
+            //console.log(prop)
             const descriptor = Object.getOwnPropertyDescriptor(contractClass.prototype, prop);
+            //console.log('Descriptor: ', descriptor);
             if (descriptor?.get && prop !== 'address') {
                 stateFields.push({
                     name: prop,
                     index: stateIndex++
                 });
-            }
-        });
-
+            }                
+        })        
+        //console.log('StateFields: ', stateFields)
         return stateFields;
     }
 
@@ -144,6 +153,7 @@ export class SmartContractAnalyzer {
             field: string;
             operations: ('get' | 'set')[];
         }>;
+        state: string;
     }> => {
         const relationships = new Map();
 
@@ -151,7 +161,8 @@ export class SmartContractAnalyzer {
             const contractRelations = {
                 parents: [],
                 children: [] as Array<{contract?: string; method: string}>,
-                stateAccess: [] as Array<{field: string; operations: ('get' | 'set')[]}>
+                stateAccess: [] as Array<{field: string; operations: ('get' | 'set')[]}>,
+                onChainStates: contract.stateFields.map(field => field.name).join(', ')
             };
 
             contract.methods.forEach(method => {
@@ -200,7 +211,6 @@ export class SmartContractAnalyzer {
                 }
             });
         });
-
         return relationships;
     }
     

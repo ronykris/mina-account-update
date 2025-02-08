@@ -21,7 +21,8 @@ export class AccountUpdateAnalyzer {
         }
 
         const parentId = this.parentStack.length > 0 ? this.parentStack[this.parentStack.length - 1] : undefined;
-
+        const methodInfo = this.extractMethodInfo(au)
+        
         // Create relationship entry
         const relationship: AccountUpdateRelationship = {
             id: auId,
