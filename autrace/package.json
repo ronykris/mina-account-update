@@ -9,6 +9,11 @@
   "author": "krish",
   "license": "ISC",
   "devDependencies": {
+    "@types/node": "^22.13.0",
     "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "@mermaid-js/mermaid-cli": "^11.4.2",
+    "o1js": "^2.2.0"
   }
 }

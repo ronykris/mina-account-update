@@ -27,6 +27,7 @@ interface TransactionNode {
     role?: string;
     contractType?: string;
     features?: Record<string, any>;
+    contractMetadata?: ContractMetadata;
 }
 
 interface TransactionEdge {
@@ -49,7 +50,7 @@ interface TransactionState {
         totalFees: string;
         accountUpdates: number;
     };
-    relationships: Map<string, string[]>;
+    relationships: Map<string, AccountUpdateRelationship>;  // Update this line
 }
 
 interface Edge {
@@ -59,11 +60,11 @@ interface Edge {
     operation: {
         sequence: number;
         type: string;
+        status: 'success' | 'rejected';
         amount?: {
             value: number;
             denomination: string;
         };
-        status: 'success' | 'rejected';
         fee?: string;
     };
 }
@@ -84,5 +85,136 @@ interface NodeType {
     type: AccountType;
 }
 
+/*interface ContractMetadata {
+    methods: {
+        name: string;
+        authorization: {
+            requiresProof: boolean;
+            requiresSignature: boolean;
+        };
+        accountUpdates: {
+            creates: boolean;
+            requiresSignature: boolean;
+            balanceChanges: boolean;
+        }[];
+    }[];
+    state: {
+        fields: string[];
+        hasOnChainState: boolean;
+    };
+}*/
 
-export { TreeSnapshot, TreeOperation, ChangeLog, AUMetadata, Edge, TransactionNode, TransactionState, AccountType };
+interface ContractMetadata {
+    methods: MethodAnalysis[];
+    state: {
+        fields: string[];
+        hasOnChainState: boolean;
+    };
+}
+
+interface EnhancedTransactionState extends TransactionState {
+    contractMetadata: Map<string, ContractMetadata>;
+}
+
+interface AccountUpdateBody {
+    callDepth?: number;
+    balanceChange?: any;
+    publicKey?: any;
+    mayUseToken?: any;
+}
+
+interface ParsedAccountUpdate {
+    id: string | number;
+    label?: string;
+    body: AccountUpdateBody;
+    lazyAuthorization?: {
+        kind?: string;
+        methodName?: string;
+    };
+    caller?: string;
+}
+
+interface MethodAnalysis {
+    name: string;
+    childCalls: {
+        contractMethod?: string;  // for inter-contract calls
+        internalMethod?: string;  // for internal method calls
+    }[];
+    stateChanges: {
+        field: string;
+        operation: 'set' | 'get';
+    }[];
+    authorization: {
+        requiresProof: boolean;
+        requiresSignature: boolean;
+    };
+}
+
+interface MethodAccountUpdate {
+    creates: boolean;
+    requiresSignature: boolean;
+    balanceChanges: boolean;
+}
+
+interface ContractMethod {
+    name: string;
+    authorization: {
+        requiresProof: boolean;
+        requiresSignature: boolean;
+    };
+    accountUpdates: MethodAccountUpdate[];
+}
+
+interface ContractAnalysis {
+    name: string;
+    stateFields: {
+        name: string;
+        index: number;  // position in appState array
+    }[];
+    methods: MethodAnalysis[];
+    permissions: string[];
+}
+
+interface AccountUpdateRelationship {
+    
+        id: string;
+        label: string;
+        parentId?: string;
+        children: string[];
+        depth: number;
+        method?: {
+            name: string;
+            contract: string;
+        };
+        onChainStates?: string;
+        stateChanges?: {
+            field: string;
+            value: any;
+        }[];
+    
+}
+
+interface PlainRelationshipMap {
+    [key: string]: AccountUpdateRelationship;
+}
+
+interface EntityInfo {
+    id: string;
+    type: string;
+    name: string;
+    operations: Set<string>;
+    publicKey: string;
+    contractType?: string;
+    labels: Set<string>;
+}
+
+interface FlowOperation {
+    from: string;
+    to: string;
+    action: string;
+    fee?: string;
+    status?: string;
+    parameters?: Record<string, string>;
+}
+
+export { TreeSnapshot, EntityInfo, FlowOperation, PlainRelationshipMap, AccountUpdateRelationship, TreeOperation, ContractAnalysis, ChangeLog, ContractMethod, MethodAccountUpdate, AUMetadata, Edge, TransactionNode, TransactionState, AccountType, ContractMetadata, MethodAnalysis, EnhancedTransactionState, ParsedAccountUpdate };
