@@ -47,7 +47,7 @@ interface TransactionState {
     metadata: {
         totalProofs: number;
         totalSignatures: number;
-        totalFees: string;
+        totalFees: number;
         accountUpdates: number;
     };
     relationships: Map<string, AccountUpdateRelationship>;  // Update this line
