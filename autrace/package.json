@@ -1,6 +1,6 @@
 {
   "name": "autrace",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "Account Update analyser for MINA",
   "main": "build/src/index.js",
   "types": "build/src/index.d.ts",
@@ -10,6 +10,29 @@
     "LICENSE"
   ],
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ronykris/mina-account-update.git"
+  },
+  "keywords": [
+    "mina-protocol",
+    "o1js",
+    "zkapp",
+    "blockchain",
+    "transaction-tracing",
+    "account-updates",
+    "visualization",
+    "debugging",
+    "development-tools",
+    "smart-contracts",
+    "zkapp-development",
+    "mina-debugging",
+    "transaction-visualization",
+    "blockchain-analysis",
+    "developer-tools",
+    "zero-knowledge",
+    "zk-tools"
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc"
