@@ -284,13 +284,24 @@ export class AUVisualizer {
         let mermaidCode = `%%{init: {
             'theme': 'base',
             'themeVariables': {
-                'fontSize': '14px',
-                'fontFamily': 'arial',
-                'nodeSpacing': 50,
-                'rankSpacing': 50
+                'fontSize': '15px',
+                'fontFamily': '"Helvetica Neue", Arial, sans-serif',
+                'nodeSpacing': 200,
+                'rankSpacing': 150,
+                'labelBackground': '#ffffff',
+                'fontWeight': 600,
+                'wrap': true,
+                'useMaxWidth': false
+            },
+            'securityLevel': 'loose',
+            'flowchart': {
+                'htmlLabels': true,
+                'curve': 'basis',
+                'padding': 30,
+                'useMaxWidth': false,
+                'diagramPadding': 50
             }
         }}%%\n`;
-
         mermaidCode += 'flowchart TB\n';
         mermaidCode += '    %% Global styles\n';
         mermaidCode += '    classDef accountNode fill:#lightblue,stroke:#333,stroke-width:2px\n';
@@ -365,6 +376,86 @@ export class AUVisualizer {
         return markdown;
     }
 
+    public async openInBrowser(filePath: string): Promise<void> {
+        // Convert to absolute path for browser
+        const absolutePath = require('path').resolve(filePath);
+        const fileUrl = `file://${absolutePath}`;
+
+        try {
+            // Different commands for different operating systems
+            let command: string;
+            switch (process.platform) {
+                case 'darwin':  // macOS
+                    command = `open -a "Google Chrome" "${fileUrl}"`;
+                    break;
+                case 'win32':   // Windows
+                    command = `start chrome "${fileUrl}"`;
+                    break;
+                default:        // Linux and others
+                    command = `google-chrome "${fileUrl}"`;
+                    break;
+            }
+            
+            await exec(command);
+        } catch (firstError) {
+            try {
+                // Fallback to default browser if Chrome isn't available
+                let fallbackCommand: string;
+                switch (process.platform) {
+                    case 'darwin':  // macOS
+                        fallbackCommand = `open "${fileUrl}"`;
+                        break;
+                    case 'win32':   // Windows
+                        fallbackCommand = `start "" "${fileUrl}"`;
+                        break;
+                    default:        // Linux and others
+                        fallbackCommand = `xdg-open "${fileUrl}"`;
+                        break;
+                }
+                await exec(fallbackCommand);
+            } catch (error) {
+                console.error('Error opening SVG in browser:', error);
+                throw error;
+            }
+        }
+    }
+
+    public async generateSVG(outputPath: string = 'transaction_flow.svg'): Promise<void> {
+        try {
+            const mermaidCode = this.generateMermaidCode();
+    
+            const tempFile = 'temp_diagram.mmd';
+            await fs.writeFile(tempFile, mermaidCode);
+    
+            const config = {
+                width: 3840,
+                height: 2160,
+                backgroundColor: '#ffffff',
+                scale: 1.0,  // Scale can be 1.0 for SVG since it's vector-based
+                puppeteerConfig: {
+                    deviceScaleFactor: 1.0
+                }
+            };
+    
+            // Generate SVG
+            const command = `mmdc -i ${tempFile} -o ${outputPath} ` +
+                `-w ${config.width} ` +
+                `-H ${config.height} ` +
+                `-b ${config.backgroundColor}`;
+            
+            await exec(command);
+    
+            // Clean up temporary file
+            await fs.unlink(tempFile);
+    
+            console.log(`Successfully generated SVG at: ${outputPath}`);
+            //await this.openInBrowser(outputPath);
+        } catch (error) {
+            console.error('Error generating SVG:', error);
+            throw error;
+        }
+    }
+
     public async generatePNG(outputPath: string = 'transaction_flow.png'): Promise<void> {
 
         try {
@@ -374,13 +465,29 @@ export class AUVisualizer {
             await fs.writeFile(tempFile, mermaidCode);
 
             const config = {
-                width: 1200,      
-                height: 800,      
-                backgroundColor: '#ffffff'  // White background
+                width: 3840,          // 4K width
+                height: 2160,         // 4K height
+                backgroundColor: '#ffffff',
+                scale: 8.0,           // Increased scale for better text quality
+                puppeteerConfig: {
+                    deviceScaleFactor: 4.0,
+                    defaultViewport: {
+                        width: 3840,
+                        height: 2160,
+                        deviceScaleFactor: 4.0
+                    }
+                }
             };
 
-            const command = `mmdc -i ${tempFile} -o ${outputPath} -w ${config.width} -H ${config.height} -b ${config.backgroundColor}`;
-            
+            const command = `mmdc -i ${tempFile} -o ${outputPath} ` +
+            `-w ${config.width} ` +
+            `-H ${config.height} ` +
+            `-b ${config.backgroundColor} ` +
+            `-s ${config.scale} ` +
+            `--puppeteerConfig '{"deviceScaleFactor": ${config.puppeteerConfig.deviceScaleFactor}, ` +
+            `"defaultViewport": {"width": ${config.width}, "height": ${config.height}, ` +
+            `"deviceScaleFactor": ${config.puppeteerConfig.deviceScaleFactor}}}'`;
+
             await exec(command);
 
             await fs.unlink(tempFile);

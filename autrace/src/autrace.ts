@@ -22,7 +22,7 @@ export class AUTrace {
             metadata: {
                 totalProofs: 0,
                 totalSignatures: 0,
-                totalFees: '0',
+                totalFees: 0,
                 accountUpdates: 0
             },
             relationships: new Map()
@@ -58,11 +58,34 @@ export class AUTrace {
 
     private processAccountUpdate = (au: AccountUpdate): void => {
         const auMetadata = this.extractAUMetadata(au);
-        
-        if (auMetadata.type === 'proof') {
+        if (au.authorization.proof) {
+            this.transactionState.metadata.totalProofs++;
+        } else if (au.authorization.signature) {
+            this.transactionState.metadata.totalSignatures++;
+        }
+        /*if (auMetadata.type === 'proof') {
             this.transactionState.metadata.totalProofs++;
         } else if (auMetadata.type === 'signature') {
             this.transactionState.metadata.totalSignatures++;
+        }*/
+        // Calculate fees
+        if (au.body.balanceChange) {
+            const magnitude = au.body.balanceChange.magnitude.toString();
+            // If balance change is negative, it's a fee
+            if (au.body.balanceChange.isNegative()) {
+                // Convert to nanomina
+                const feesInNanomina = BigInt(magnitude);
+                
+                // Convert current total from MINA to nanomina for calculation
+                const currentTotalNanomina = this.transactionState.metadata.totalFees === 0 
+                    ? BigInt(0) 
+                    : BigInt(this.transactionState.metadata.totalFees * 1e9);
+                        
+                const newTotalNanomina = currentTotalNanomina + feesInNanomina;
+                
+                // Convert back to MINA and store as number
+                this.transactionState.metadata.totalFees = Number(newTotalNanomina) / 1e9;
+            }
         }
 
         if (!this.transactionState.nodes.has(auMetadata.id)) {
@@ -92,6 +115,12 @@ export class AUTrace {
             methodName: au.lazyAuthorization?.methodName,
             args: au.lazyAuthorization?.args
         };
+    }
+
+    private getTotalFeesInMina(): number {
+        const feesInNanomina = BigInt(this.transactionState.metadata.totalFees);
+        const feesInMina = Number(feesInNanomina) / 1e9;
+        return Number(feesInMina); 
     }
 
     private determineAuthorizationType(au: any): 'proof' | 'signature' | 'none' {
@@ -230,7 +259,7 @@ export class AUTrace {
             metadata: {
                 totalProofs: 0,
                 totalSignatures: 0,
-                totalFees: '0',
+                totalFees: 0,
                 accountUpdates: 0
             },
             relationships: new Map()
@@ -325,6 +354,10 @@ export class AUTrace {
                 nodes: this.transactionState.nodes,
                 edges: expandedEdges as any,
                 balanceStates: this.transactionState.balanceStates,
+                /*metadata: {
+                    ...this.transactionState.metadata,
+                    totalFees: this.getTotalFeesInMina()  // Add here to convert to MINA
+                },*/
                 metadata: this.transactionState.metadata,
                 relationships: plainRelationships
             }
@@ -336,10 +369,22 @@ export class AUTrace {
             nodes: this.transactionState.nodes,
             edges: expandedEdges as any,
             balanceStates: this.transactionState.balanceStates,
+            /*metadata: {
+                ...this.transactionState.metadata,
+                totalFees: this.getTotalFeesInMina()  // Add here to convert to MINA
+            },*/
             metadata: this.transactionState.metadata,
             relationships: plainRelationships
         };
 
+    }
+
+    public getTransactions = (...transactionStates: any[]) => {                
+        for (const txState of transactionStates) {
+            if (txState) {
+                this.getTransactionState(txState);
+            }
+        }
     }
 
     public getStateHistory() {
