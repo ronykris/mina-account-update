@@ -449,7 +449,7 @@ export class AUVisualizer {
             await fs.unlink(tempFile);
     
             console.log(`Successfully generated SVG at: ${outputPath}`);
-            await this.openInBrowser(outputPath);
+            //await this.openInBrowser(outputPath);
         } catch (error) {
             console.error('Error generating SVG:', error);
             throw error;
