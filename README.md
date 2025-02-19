@@ -105,7 +105,7 @@ console.log(summary);
 ### Example Output
 
 The ASCIIVisualizer provides a colorized terminal output that looks like this:
-![AU-Change-Visualiser](https://imgur.com/a/jR433Ht)
+![AU-Change-Visualiser](image.png)
 
 ### Important Notes
 

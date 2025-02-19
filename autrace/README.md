@@ -102,11 +102,6 @@ const summary = asciiVisuals.visualizeChangeSummary(snapshots);
 console.log(summary);
 ```
 
-### Example Output
-
-The ASCIIVisualizer provides a colorized terminal output that looks like this:
-![AU-Change-Visualiser](image.png)
-
 ### Important Notes
 
 - This package uses ES modules. Ensure your project's package.json has `"type": "module"`.
