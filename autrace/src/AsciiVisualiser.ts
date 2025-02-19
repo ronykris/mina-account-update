@@ -1,8 +1,10 @@
-import { ChangeLog, TreeSnapshot } from "./Interface";
-
+import { ChangeLog, TreeSnapshot } from "./Interface.js";
 
 export class ASCIITreeVisualizer {
     private readonly INDENT = '  ';
+    private readonly TRUNCATE_LENGTH = 50;
+    private readonly HASH_PREVIEW_LENGTH = 8;
+    
     private readonly COLORS = {
         reset: '\x1b[0m',
         green: '\x1b[32m',
@@ -13,7 +15,7 @@ export class ASCIITreeVisualizer {
         gray: '\x1b[90m',
         white: '\x1b[37m',
         bold: '\x1b[1m'
-    };
+    } as const;
 
     private readonly SYMBOLS = {
         added: '+',
@@ -24,53 +26,90 @@ export class ASCIITreeVisualizer {
         branch: '├',
         leaf: '└',
         vertical: '│',
-    };
+    } as const;
 
     private formatValue(value: any): string {
-        if (value === null || value === undefined) return 'null';
+        if (value === null || value === undefined) {
+            return 'null';
+        }
         
         if (Array.isArray(value)) {
-            return `[${value.map(v => this.formatValue(v)).join(', ')}]`;
+            try {
+                return `[${value.map(v => this.formatValue(v)).join(', ')}]`;
+            } catch (error) {
+                return '[Error: Invalid Array]';
+            }
         }
 
         if (typeof value === 'object') {
-            if (value._value !== undefined) {
-                return value._value.toString();
-            }
+            try {
+                if (value === null) {
+                    return 'null';
+                }
 
-            // Handle special cases
-            if (value.hash) {
-                return `{hash: "${value.hash.substring(0, 8)}..."}`;
-            }
+                if ('_value' in value) {
+                    return String(value._value);
+                }
 
-            const str = JSON.stringify(value);
-            if (str.length > 50) {
-                return `${str.substring(0, 47)}...`;
+                // Handle special cases
+                if (value.hash) {
+                    return `{hash: "${value.hash.substring(0, this.HASH_PREVIEW_LENGTH)}..."}`;
+                }
+
+                const str = this.stringifyWithBigInt(value);
+                return this.truncateString(str);
+            } catch (error) {
+                return '[Error: Invalid Object]';
             }
+        }
+
+        try {
+            const str = String(value);
+            return this.truncateString(str);
+        } catch (error) {
+            return '[Error: Invalid Value]';
+        }
+    }
+
+    private truncateString(str: string): string {
+        if (str.length <= this.TRUNCATE_LENGTH) {
             return str;
         }
 
-        const str = value.toString();
-        if (str.length > 50) {
-            if (str.startsWith('B62')) {
-                return `${str.substring(0, 8)}...`;
-            }
-            return `${str.substring(0, 47)}...`;
+        if (str.startsWith('B62')) {
+            return `${str.substring(0, this.HASH_PREVIEW_LENGTH)}...`;
         }
-        return str;
+
+        return `${str.substring(0, this.TRUNCATE_LENGTH - 3)}...`;
     }
 
     private stringifyWithBigInt = (obj: any): string => {
-        return JSON.stringify(
-          obj,
-          (key, value) => (typeof value === 'bigint' ? value.toString() : value),
-        )
+        try {
+            return JSON.stringify(
+                obj,
+                (key, value) => {
+                    if (typeof value === 'bigint') {
+                        return value.toString();
+                    }
+                    if (value instanceof Error) {
+                        return value.message;
+                    }
+                    return value;
+                }
+            );
+        } catch (error) {
+            return '[Error: Unable to stringify]';
+        }
     };
 
     private visualizeChanges(changes: ChangeLog): string {
         let result = '';
 
-        if (changes.added.length > 0) {
+        const hasAdded = Array.isArray(changes.added) && changes.added.length > 0;
+        const hasUpdated = Array.isArray(changes.updated) && changes.updated.length > 0;
+        const hasRemoved = Array.isArray(changes.removed) && changes.removed.length > 0;
+
+        if (hasAdded) {
             result += `${this.COLORS.green}${this.SYMBOLS.branch} Added:${this.COLORS.reset}\n`;
 
             changes.added.forEach((item, i) => {
@@ -78,13 +117,15 @@ export class ASCIITreeVisualizer {
                 const prefix = isLast ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
                 result += `${this.COLORS.green}${prefix} ${this.SYMBOLS.added} ${item.path}${this.COLORS.reset}\n`;
 
-                const addPrefix = isLast ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
-                result += `${this.COLORS.green}    ${addPrefix} ${this.stringifyWithBigInt(item.node)} ${this.COLORS.reset}\n` 
+                if (item.node) {
+                    const addPrefix = isLast ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
+                    result += `${this.COLORS.green}    ${addPrefix} ${this.stringifyWithBigInt(item.node)} ${this.COLORS.reset}\n`;
+                }
             });
         }
 
-        if (changes.updated.length > 0) {
-            if (changes.added.length > 0) result += '\n';
+        if (hasUpdated) {
+            if (hasAdded) result += '\n';
             result += `${this.COLORS.yellow}${this.SYMBOLS.branch} Modified:${this.COLORS.reset}\n`;
             
             changes.updated.forEach((mod, i) => {
@@ -92,16 +133,18 @@ export class ASCIITreeVisualizer {
                 const prefix = isLast ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
                 result += `${this.COLORS.yellow}${prefix} ${this.SYMBOLS.modified} ${mod.path}${this.COLORS.reset}\n`;
                 
-                mod.changes.forEach((change, j) => {
-                    const changePrefix = j === mod.changes.length - 1 ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
-                    result += `${this.COLORS.gray}    ${changePrefix} ${change.field}: ${this.COLORS.reset}` +
-                             `${this.formatValue(change.oldValue)} ${this.SYMBOLS.arrow} ${this.formatValue(change.newValue)}\n`;
-                });
+                if (Array.isArray(mod.changes)) {
+                    mod.changes.forEach((change, j) => {
+                        const changePrefix = j === mod.changes.length - 1 ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
+                        result += `${this.COLORS.gray}    ${changePrefix} ${change.field}: ${this.COLORS.reset}` +
+                                 `${this.formatValue(change.oldValue)} ${this.SYMBOLS.arrow} ${this.formatValue(change.newValue)}\n`;
+                    });
+                }
             });
         }
 
-        if (changes.removed.length > 0) {
-            if (changes.added.length > 0 || changes.updated.length > 0) result += '\n';
+        if (hasRemoved) {
+            if (hasAdded || hasUpdated) result += '\n';
             result += `${this.COLORS.red}${this.SYMBOLS.branch} Removed:${this.COLORS.reset}\n`;
 
             changes.removed.forEach((item, i) => {
@@ -109,9 +152,10 @@ export class ASCIITreeVisualizer {
                 const prefix = isLast ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
                 result += `${this.COLORS.red}${prefix} ${this.SYMBOLS.removed} ${item.path}${this.COLORS.reset}\n`;
 
-                const removePrefix = i === changes.removed.length - 1 ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
-                result += `${this.COLORS.red}    ${removePrefix} ${this.stringifyWithBigInt(item.node)} ${this.COLORS.reset}\n` 
-                //result += `${this.COLORS.red}${prefix} ${this.SYMBOLS.removed} ${item}${this.COLORS.reset}\n`;
+                if (item.node) {
+                    const removePrefix = isLast ? this.SYMBOLS.leaf : this.SYMBOLS.branch;
+                    result += `${this.COLORS.red}    ${removePrefix} ${this.stringifyWithBigInt(item.node)} ${this.COLORS.reset}\n`;
+                }
             });
         }
 
@@ -119,16 +163,25 @@ export class ASCIITreeVisualizer {
     }
 
     public visualizeChangeSummary(snapshots: TreeSnapshot[]): string {
+        if (!Array.isArray(snapshots) || snapshots.length === 0) {
+            return this.formatHeader('No changes to visualize');
+        }
+
         let result = this.formatHeader('Transaction Evolution Summary');
 
         snapshots.forEach((snapshot, index) => {
-            result += this.formatPhase(snapshot.operation, snapshot.timestamp);
+            if (!snapshot) return;
+
+            const timestamp = snapshot.timestamp || Date.now();
+            const operation = snapshot.operation || 'UNKNOWN';
+            
+            result += this.formatPhase(operation, timestamp);
 
             if (index === 0) {
                 const accountUpdates = Array.isArray(snapshot.tree) ? snapshot.tree.length : 0;
                 result += `${this.COLORS.gray}${this.SYMBOLS.bullet} Created transaction with ${accountUpdates} account updates${this.COLORS.reset}\n`;
-            } else {
-                const hasChanges = Object.values(snapshot.changes).some(arr => arr.length > 0);
+            } else if (snapshot.changes) {
+                const hasChanges = Object.values(snapshot.changes).some(arr => Array.isArray(arr) && arr.length > 0);
                 if (hasChanges) {
                     result += this.visualizeChanges(snapshot.changes);
                 } else {
@@ -148,7 +201,11 @@ export class ASCIITreeVisualizer {
     }
 
     private formatPhase(phase: string, timestamp: number): string {
-        const date = new Date(timestamp).toLocaleTimeString();
-        return `${this.COLORS.bold}${this.COLORS.purple}▶ ${phase.toUpperCase()} ${this.COLORS.gray}(${date})${this.COLORS.reset}\n`;
+        try {
+            const date = new Date(timestamp).toLocaleTimeString();
+            return `${this.COLORS.bold}${this.COLORS.purple}▶ ${phase.toUpperCase()} ${this.COLORS.gray}(${date})${this.COLORS.reset}\n`;
+        } catch (error) {
+            return `${this.COLORS.bold}${this.COLORS.purple}▶ ${phase.toUpperCase()} ${this.COLORS.gray}(Invalid timestamp)${this.COLORS.reset}\n`;
+        }
     }
 }

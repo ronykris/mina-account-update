@@ -14,6 +14,10 @@ npm install autrace
 - `AUVisualizer`: Generate visual representations of transaction flows in various formats (Markdown, PNG, SVG)
 -- Transaction state history tracking
 -- Contract analysis capabilities
+- `AccountUpdateTrace`: Track and analyze changes in account updates throughout transaction lifecycle
+- `ASCIIVisualizer`: Generate visual ASCII representations of transaction changes and account update modifications
+-- Detailed change detection for account updates
+-- Colorized terminal output for better visibility
 
 ## Usage
 
@@ -66,6 +70,42 @@ await visualizer.generateMarkdownFile('output.md');
 await visualizer.generatePNG('output.png');
 await visualizer.generateSVG('output.svg');
 ```
+
+### Debugging
+
+```typescript
+// Initialise the AU change detector + ascii visualizer
+const auTraverse = new trace.AccountUpdateTrace()
+const asciiVisuals = new trace.ASCIITreeVisualizer()
+
+// Create and track transaction states
+const txn = await Mina.transaction(deployerAccount, async () => {
+    // Your transaction logic here
+});
+
+// Take snapshots at different stages
+auTraverse.takeSnapshot(txn, 'deploy');
+
+// After transaction is proved
+const txnprove = await txn.prove();
+auTraverse.takeSnapshot(txnprove, 'prove');
+
+// After transaction is signed
+const txnsign = await txn.sign();
+auTraverse.takeSnapshot(txnsign, 'sign');
+
+// Get all snapshots
+const snapshots = auTraverse.getSnapshots();
+
+// Generate a visual summary of changes
+const summary = asciiVisuals.visualizeChangeSummary(snapshots);
+console.log(summary);
+```
+
+### Example Output
+
+The ASCIIVisualizer provides a colorized terminal output that looks like this:
+![AU-Change-Visualiser](https://imgur.com/a/jR433Ht)
 
 ### Important Notes
 
