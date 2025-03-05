@@ -101,7 +101,7 @@ const snapshots = auTraverse.getSnapshots();
 const summary = asciiVisuals.visualizeChangeSummary(snapshots);
 console.log(summary);
 ```
-
+                                                                                                                                                                   
 ### Important Notes
 
 - This package uses ES modules. Ensure your project's package.json has `"type": "module"`.
