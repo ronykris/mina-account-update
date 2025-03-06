@@ -2,6 +2,7 @@ import { AccountUpdate, SmartContract } from 'o1js';
 import { TreeSnapshot, TreeOperation, ChangeLog, TransactionState, AUMetadata, AccountType, Edge, EnhancedTransactionState, ParsedAccountUpdate, TransactionNode, MethodAnalysis, ContractMetadata, ContractMethod, AccountUpdateRelationship, ContractAnalysis } from './Interface.js'
 import { SmartContractAnalyzer } from './ContractAnalyser.js';
 import { AccountUpdateAnalyzer } from './AccountUpdateAnalyzer.js';
+import { adaptBlockchainTransaction } from './BlockchainAdapter.js';
 
 export class AUTrace {
     private transactionState: TransactionState;
@@ -276,7 +277,16 @@ export class AUTrace {
             this.transactionState.relationships = new Map();
         }
 
-        this.traverseTransaction(transaction);
+        // Check if this is a blockchain transaction and adapt it if needed
+        const isBlockchainTx = !transaction?.transaction?.accountUpdates && 
+                               (transaction.updatedAccounts || transaction.txHash);
+        
+        // Use the adapter if this is a blockchain transaction
+        const processableTx = isBlockchainTx ? 
+            adaptBlockchainTransaction(transaction) : 
+            transaction;
+
+        this.traverseTransaction(processableTx);
 
         const auRelationships = this.auAnalyzer.getRelationships();
         const plainRelationships = new Map<string, AccountUpdateRelationship>();
@@ -359,7 +369,15 @@ export class AUTrace {
                     totalFees: this.getTotalFeesInMina()  // Add here to convert to MINA
                 },*/
                 metadata: this.transactionState.metadata,
-                relationships: plainRelationships
+                relationships: plainRelationships,
+                // Add metadata from blockchain transaction if available
+                blockchainData: isBlockchainTx ? {
+                    blockHeight: transaction.blockHeight,
+                    txHash: transaction.txHash,
+                    timestamp: transaction.timestamp,
+                    memo: transaction.memo,
+                    status: transaction.txStatus
+                } : undefined
             }
 
         //this.transactionSnapshots = [...this.transactionSnapshots, state];
@@ -374,9 +392,21 @@ export class AUTrace {
                 totalFees: this.getTotalFeesInMina()  // Add here to convert to MINA
             },*/
             metadata: this.transactionState.metadata,
-            relationships: plainRelationships
+            relationships: plainRelationships,
+            // Include blockchain data in the return value
+            blockchainData: isBlockchainTx ? {
+                blockHeight: transaction.blockHeight,
+                txHash: transaction.txHash,
+                timestamp: transaction.timestamp,
+                memo: transaction.memo,
+                status: transaction.txStatus
+            } : undefined
         };
 
+    }
+
+    public getBlockchainTransactionState = (blockchainTx: any): TransactionState => {
+        return this.getTransactionState(blockchainTx);
     }
 
     public getTransactions = (...transactionStates: any[]) => {                

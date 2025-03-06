@@ -50,7 +50,16 @@ interface TransactionState {
         totalFees: number;
         accountUpdates: number;
     };
-    relationships: Map<string, AccountUpdateRelationship>;  // Update this line
+    relationships: Map<string, AccountUpdateRelationship>;
+    blockchainData?: BlockchainData;
+}
+
+interface BlockchainData {
+    blockHeight: number;
+    txHash: string;
+    timestamp: number;
+    memo: string;
+    status: string;
 }
 
 interface Edge {

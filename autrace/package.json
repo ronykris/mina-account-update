@@ -35,16 +35,21 @@
   ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc"
+    "build": "tsc",
+    "aucli": "node ./build/src/aucli.js --tx 5JuYk2e4NjmXHrRZxrTZsKJhcySYYmu88bMikY1S9SV6HUTaSP9S"
   },
   "author": "krish",
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^22.13.0",
+    "@types/yargs": "^17.0.33",
     "typescript": "^5.7.3"
   },
   "dependencies": {
     "@mermaid-js/mermaid-cli": "^11.4.2",
-    "o1js": "^2.2.0"
+    "axios": "^1.8.1",
+    "dotenv": "^16.4.7",
+    "o1js": "^2.2.0",
+    "yargs": "^17.7.2"
   }
 }
