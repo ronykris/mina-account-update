@@ -1,7 +1,10 @@
 import { promises as fs } from 'fs';
 import child_process from 'child_process';
 import util from 'util';
-import { EntityInfo, FlowOperation } from './Interface.js';
+import { EntityInfo, FlowOperation, TransactionState } from './Interface.js';
+import * as d3 from 'd3';
+import { JSDOM } from 'jsdom';
+
 const exec = util.promisify(child_process.exec);
 
 export class AUVisualizer {
@@ -509,4 +512,444 @@ export class AUVisualizer {
             throw error;
         }
     }
+
+    private generateBlockchainSection = (txState: TransactionState): string => {
+        if (!txState.blockchainData) {
+            return '';
+        }
+
+        const data = txState.blockchainData;
+        let md = '## Blockchain Transaction Details\n\n';
+        
+        md += `- **Transaction Hash**: \`${data.txHash || 'Unknown'}\`\n`;
+        md += `- **Block Height**: ${data.blockHeight || 'Unknown'}\n`;
+        md += `- **Status**: ${data.status || 'Unknown'}\n`;
+        
+        if (data.timestamp) {
+            const date = new Date(data.timestamp);
+            md += `- **Timestamp**: ${date.toISOString()}\n`;
+        }
+        
+        if (data.memo) {
+            md += `- **Memo**: ${data.memo}\n`;
+        }
+        
+        // Add failure information if applicable
+        if (data.status === 'failed' && data.failures && data.failures.length > 0) {
+            md += '\n### Failures\n\n';
+            data.failures.forEach(failure => {
+                md += `- **Account Update ${failure.index}**: ${failure.failureReason}\n`;
+            });
+        }        
+        return md;
+    }
+
+    public generateBlockchainMarkdown(txState: TransactionState): string {
+        let markdown = '# Blockchain Transaction Analysis\n\n';
+        
+        // Add blockchain-specific section
+        markdown += this.generateBlockchainSection(txState);
+        
+        // Add standard sections
+        markdown += this.generateEntityRegistry();
+        markdown += this.generateTransactionFlow();
+        markdown += this.generateMetadata();
+        
+        return markdown;
+    }
+
+    
+    private buildEdgesIfMissing(txState: TransactionState): TransactionState {
+        // If edges already exist, don't do anything
+        if (txState.edges && txState.edges.length > 0) {
+            return txState;
+        }
+        
+        const edges: any[] = [];
+        const nodeIds = Array.from(txState.nodes.keys());
+        
+        // Fee payer relationship - connect fee payer to other accounts
+        const feePayer = this.findFeePayer(txState);
+        if (feePayer) {
+            // Connect fee payer to all other nodes (except itself)
+            nodeIds.forEach(nodeId => {
+                if (nodeId !== feePayer) {
+                    edges.push({
+                        fromNode: feePayer,
+                        toNode: nodeId,
+                        operation: 'Fee Payment/Initiation',
+                        failed: txState.blockchainData?.status === 'failed'
+                    });
+                }
+            });
+        }
+        
+        // Sequential relationships - create a chain of operations in sequence
+        for (let i = 0; i < nodeIds.length - 1; i++) {
+            // Skip if this would create a duplicate edge
+            if (!edges.some(e => e.fromNode === nodeIds[i] && e.toNode === nodeIds[i+1])) {
+                edges.push({
+                    fromNode: nodeIds[i],
+                    toNode: nodeIds[i+1],
+                    operation: 'Sequence',
+                    failed: txState.blockchainData?.status === 'failed'
+                });
+            }
+        }
+        
+        // Token relationships - connect operations on the same token
+        const tokenGroups = this.groupNodesByToken(txState);
+        tokenGroups.forEach((nodeIds, tokenId) => {
+            if (nodeIds.length > 1 && tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') {
+                for (let i = 0; i < nodeIds.length - 1; i++) {
+                    edges.push({
+                        fromNode: nodeIds[i],
+                        toNode: nodeIds[i+1],
+                        operation: 'Token Operation',
+                        failed: txState.blockchainData?.status === 'failed'
+                    });
+                }
+            }
+        });
+        
+        // Return updated state with edges
+        return {
+            ...txState,
+            edges: edges
+        };
+    }
+
+
+    private findFeePayer(txState: TransactionState): string | undefined {
+        // Try to find fee payer from blockchain data
+        if (txState.blockchainData?.feePayerAddress) {
+            // Look for node with matching address
+            for (const [id, node] of txState.nodes.entries()) {
+                if (node.publicKey === txState.blockchainData.feePayerAddress) {
+                    return id;
+                }
+            }
+        }
+        
+        // Alternatively, look for node with negative balance change
+        for (const [id, node] of txState.nodes.entries()) {
+            if (node.balanceChange && node.balanceChange < 0) {
+                return id;
+            }
+        }
+        
+        return undefined;
+    }
+
+
+    private groupNodesByToken(txState: TransactionState): Map<string, string[]> {
+        const tokenGroups = new Map<string, string[]>();
+        
+        txState.nodes.forEach((node, id) => {
+            const tokenId = node.tokenId || 'default';
+            if (!tokenGroups.has(tokenId)) {
+                tokenGroups.set(tokenId, []);
+            }
+            tokenGroups.get(tokenId)!.push(id);
+        });
+        
+        return tokenGroups;
+    }
+
+    public async generateBlockchainFlowSVG(txState: TransactionState, outputPath: string = 'blockchain_flow.svg'): Promise<string> {
+        try {
+
+            txState = this.buildEdgesIfMissing(txState);
+            
+            // Create a virtual DOM for server-side rendering
+            const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
+            const document = dom.window.document;
+            global.document = document;
+            
+            // Create SVG container
+            const width = 1200;
+            const height = 800;
+            const svg = d3.select(document.body)
+                .append('svg')
+                .attr('xmlns', 'http://www.w3.org/2000/svg')
+                .attr('width', width)
+                .attr('height', height)
+                .attr('viewBox', `0 0 ${width} ${height}`);
+            
+            // Add title
+            svg.append('text')
+                .attr('x', width / 2)
+                .attr('y', 30)
+                .attr('text-anchor', 'middle')
+                .attr('font-family', 'Arial')
+                .attr('font-size', '20px')
+                .attr('font-weight', 'bold')
+                .text(`Transaction Flow: ${txState.blockchainData?.txHash?.substring(0, 16) || 'Unknown'}...`);
+            
+            // Add status
+            svg.append('text')
+                .attr('x', width / 2)
+                .attr('y', 60)
+                .attr('text-anchor', 'middle')
+                .attr('font-family', 'Arial')
+                .attr('font-size', '16px')
+                .text(`Status: ${txState.blockchainData?.status || 'Unknown'}`);
+            
+            // Create arrow markers for different relationship types
+            const defs = svg.append('defs');
+            const markers = [
+                { id: 'arrow-black', color: 'black' },
+                { id: 'arrow-red', color: 'red' },
+                { id: 'arrow-green', color: 'green' },
+                { id: 'arrow-blue', color: 'blue' },
+                { id: 'arrow-purple', color: 'purple' }
+            ];
+            
+            markers.forEach(marker => {
+                defs.append('marker')
+                    .attr('id', marker.id)
+                    .attr('viewBox', '0 0 10 10')
+                    .attr('refX', 25)
+                    .attr('refY', 5)
+                    .attr('markerWidth', 6)
+                    .attr('markerHeight', 6)
+                    .attr('orient', 'auto')
+                    .append('path')
+                    .attr('d', 'M 0 0 L 10 5 L 0 10 z')
+                    .attr('fill', marker.color);
+            });
+            
+            // Extract and convert nodes from txState
+            const nodesArray: any[] = [];
+            const nodeMap = new Map();
+            
+            // Debug information
+            console.log(`Processing transaction state with ${txState.nodes.size} nodes and ${txState.edges.length} edges`);
+            
+            // Process nodes
+            txState.nodes.forEach((node, id) => {
+                const nodeData = {
+                    id,
+                    label: node.label || 'Unknown',
+                    publicKey: node.publicKey,
+                    shortAddress: node.publicKey.substring(0, 10) + '...',
+                    type: node.type,
+                    failed: !!node.failed,
+                    failureReason: node.failureReason,
+                    tokenId: node.tokenId,
+                    // These will be filled in by the simulation
+                    x: undefined,
+                    y: undefined
+                };
+                
+                nodesArray.push(nodeData);
+                nodeMap.set(id, nodeData);
+            });
+            
+            // Extract edges
+            const linksArray: any[] = [];
+            
+            txState.edges.forEach((edge, i) => {
+                // Validate source and target nodes exist
+                if (nodeMap.has(edge.fromNode) && nodeMap.has(edge.toNode)) {
+                    linksArray.push({
+                        id: `edge${i}`,
+                        source: nodeMap.get(edge.fromNode),
+                        target: nodeMap.get(edge.toNode),
+                        operation: edge.operation,
+                        failed: !!edge.failed
+                    });
+                } else {
+                    console.warn(`Edge references non-existent node: ${edge.fromNode} -> ${edge.toNode}`);
+                }
+            });
+            
+            console.log(`Processed ${nodesArray.length} nodes and ${linksArray.length} links for visualization`);
+            
+            // Set initial positions manually (in a grid layout) instead of using force simulation
+            const gridCols = Math.ceil(Math.sqrt(nodesArray.length));
+            const cellWidth = width / (gridCols + 1);
+            const cellHeight = height / (Math.ceil(nodesArray.length / gridCols) + 1);
+            
+            nodesArray.forEach((node, i) => {
+                const row = Math.floor(i / gridCols);
+                const col = i % gridCols;
+                node.x = (col + 1) * cellWidth;
+                node.y = (row + 1) * cellHeight;
+            });
+            
+            // Draw links
+            const link = svg.append('g')
+                .selectAll('line')
+                .data(linksArray)
+                .enter().append('line')
+                .attr('x1', d => d.source.x)
+                .attr('y1', d => d.source.y)
+                .attr('x2', d => d.target.x)
+                .attr('y2', d => d.target.y)
+                .attr('stroke', d => d.failed ? 'red' : 'black')
+                .attr('stroke-width', 2)
+                .attr('stroke-dasharray', d => d.failed ? '5,5' : null)
+                .attr('marker-end', d => `url(#arrow-${d.failed ? 'red' : 'black'})`);
+            
+            // Add link labels
+            const linkText = svg.append('g')
+                .selectAll('text')
+                .data(linksArray)
+                .enter().append('text')
+                .attr('x', d => (d.source.x + d.target.x) / 2)
+                .attr('y', d => (d.source.y + d.target.y) / 2 - 10)
+                .attr('text-anchor', 'middle')
+                .attr('font-family', 'Arial')
+                .attr('font-size', '12px')
+                .attr('fill', d => d.failed ? 'red' : 'black')
+                .text(d => {
+                    if (!d.operation) return '';
+                    const opStr = typeof d.operation === 'string' ? d.operation : JSON.stringify(d.operation);
+                    return opStr.length > 30 ? opStr.substring(0, 27) + '...' : opStr;
+                });
+            
+            // Draw nodes
+            const node = svg.append('g')
+                .selectAll('g')
+                .data(nodesArray)
+                .enter().append('g')
+                .attr('transform', d => `translate(${d.x},${d.y})`);
+            
+            // Add circles for nodes
+            node.append('circle')
+                .attr('r', 20)
+                .attr('fill', d => {
+                    if (d.failed) return '#FFCCCC';
+                    if (d.type === 'contract') return '#DDA0DD';
+                    if (d.tokenId && d.tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') return '#CCFFCC';
+                    return '#B3E0FF';
+                })
+                .attr('stroke', d => d.failed ? 'red' : '#333')
+                .attr('stroke-width', 2);
+            
+            // Add labels to nodes
+            node.append('text')
+                .attr('dy', 5)
+                .attr('text-anchor', 'middle')
+                .attr('font-family', 'Arial')
+                .attr('font-size', '12px')
+                .text(d => d.shortAddress);
+            
+            // Add subtitle text for nodes
+            node.append('text')
+                .attr('dy', 25)
+                .attr('text-anchor', 'middle')
+                .attr('font-family', 'Arial')
+                .attr('font-size', '10px')
+                .attr('fill', d => d.failed ? 'red' : 'black')
+                .text(d => {
+                    if (d.failed) return d.failureReason ? d.failureReason.substring(0, 15) : 'Failed';
+                    if (d.tokenId && d.tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') return 'Custom Token';
+                    return d.type === 'contract' ? 'Contract' : 'Account';
+                });
+            
+            // Add legend
+            const legend = svg.append('g')
+                .attr('transform', 'translate(50, 100)');
+            
+            const legendItems = [
+                { color: '#B3E0FF', label: 'Account' },
+                { color: '#DDA0DD', label: 'Contract' },
+                { color: '#CCFFCC', label: 'Token Operation' },
+                { color: '#FFCCCC', label: 'Failed Operation' }
+            ];
+            
+            legendItems.forEach((item, i) => {
+                const g = legend.append('g')
+                    .attr('transform', `translate(0, ${i * 25})`);
+                
+                g.append('rect')
+                    .attr('width', 20)
+                    .attr('height', 20)
+                    .attr('fill', item.color)
+                    .attr('stroke', '#333')
+                    .attr('stroke-width', 1);
+                
+                g.append('text')
+                    .attr('x', 30)
+                    .attr('y', 15)
+                    .attr('font-family', 'Arial')
+                    .attr('font-size', '14px')
+                    .text(item.label);
+            });
+            
+            // Save SVG to file
+            const svgString = document.body.innerHTML;
+            await fs.writeFile(outputPath, svgString);
+            
+            console.log(`Successfully generated blockchain flow SVG at: ${outputPath}`);
+            return outputPath;
+        } catch (error) {
+            console.error('Error generating blockchain flow SVG:', error);
+            throw error;
+        }
+    }
+
+    public async generateBlockchainVisualization(
+        txState: TransactionState,
+        outputFormat: 'svg' | 'png' | 'md' = 'svg',
+        outputPath?: string
+    ): Promise<string> {
+        // Default output paths based on format
+        const defaultPaths = {
+            'svg': 'blockchain_flow.svg',
+            'png': 'blockchain_flow.png',
+            'md': 'blockchain_analysis.md'
+        };
+        
+        const finalOutputPath = outputPath || defaultPaths[outputFormat];
+        
+        switch (outputFormat) {
+            case 'svg':
+                return this.generateBlockchainFlowSVG(txState, finalOutputPath);
+            
+            case 'png':
+                // For PNG, first generate SVG then convert to PNG
+                const svgPath = await this.generateBlockchainFlowSVG(txState, 'temp_blockchain_flow.svg');
+                try {
+                    // Convert SVG to PNG using external tool
+                    const command = `convert -density 300 ${svgPath} ${finalOutputPath}`;
+                    await exec(command);
+                    
+                    // Clean up temporary SVG
+                    await fs.unlink(svgPath);
+                    
+                    console.log(`Successfully generated blockchain flow PNG at: ${finalOutputPath}`);
+                    return finalOutputPath;
+                } catch (error) {
+                    console.error('Error converting SVG to PNG:', error);
+                    throw error;
+                }
+            
+            case 'md':
+                // Generate markdown analysis
+                const markdown = this.generateBlockchainMarkdown(txState);
+                await fs.writeFile(finalOutputPath, markdown);
+                console.log(`Successfully generated blockchain analysis markdown at: ${finalOutputPath}`);
+                return finalOutputPath;
+        }
+    }
+
+    public async generateTransactionVisualization(
+        txState: TransactionState,
+        outputPath: string = 'transaction_visualization.svg'
+    ): Promise<void> {
+        // Detect if this is a blockchain transaction
+        const isBlockchainTx = !!txState.blockchainData;
+        
+        if (isBlockchainTx) {
+            // Use blockchain-specific visualization
+            this.generateBlockchainFlowSVG(txState, outputPath);
+        } else {
+            // Use standard visualization
+            this.generateSVG(outputPath);
+        }
+    }
+
 }

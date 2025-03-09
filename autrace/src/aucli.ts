@@ -73,7 +73,7 @@ const main = async (argv: any) => {
     autrace.clearTransactionState();
 
     console.log(chalk.yellow('Analyzing transaction...'));
-    const txState = autrace.getTransactionState(transactionData);    
+    const txState = autrace.getTransactions(transactionData);    
     
     const history = autrace.getStateHistory();
     history.forEach((state, index) => {
@@ -81,10 +81,8 @@ const main = async (argv: any) => {
     });
     
     const visualizer = new AUVisualizer(history);
-    await visualizer.generateMarkdownFile('output.md');
-    await visualizer.generatePNG('output.png');
-    await visualizer.generateSVG('output.svg');
-
+    const svg = await visualizer.generateBlockchainFlowSVG(history[0], 'blockchain_flow.svg');
+    const svg1 = await visualizer.generateTransactionVisualization(history[0], 'output.svg');
     
   } catch (error) {
     console.error(chalk.red('Error:'), error instanceof Error ? error.message : String(error));

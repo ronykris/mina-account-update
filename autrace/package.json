@@ -36,11 +36,12 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
-    "aucli": "node ./build/src/aucli.js --tx 5JuYk2e4NjmXHrRZxrTZsKJhcySYYmu88bMikY1S9SV6HUTaSP9S"
+    "aucli": "node ./build/src/aucli.js --tx 5Ju94GX1HidYqCJD6PVipjU74LksKQaK7ZKKKg5P4aHyHhUCntBv"
   },
   "author": "krish",
   "license": "ISC",
   "devDependencies": {
+    "@types/jsdom": "^21.1.7",
     "@types/node": "^22.13.0",
     "@types/yargs": "^17.0.33",
     "typescript": "^5.7.3"
@@ -48,7 +49,9 @@
   "dependencies": {
     "@mermaid-js/mermaid-cli": "^11.4.2",
     "axios": "^1.8.1",
+    "d3": "^7.9.0",
     "dotenv": "^16.4.7",
+    "jsdom": "^26.0.0",
     "o1js": "^2.2.0",
     "yargs": "^17.7.2"
   }

@@ -1,6 +1,5 @@
-import { AccountUpdate } from 'o1js';
 
-export function adaptBlockchainTransaction(blockchainTx: any): any {
+export const adaptBlockchainTransaction = (blockchainTx: any): any => {
   // If the transaction is already in the expected format, return it as is
   if (blockchainTx?.transaction?.accountUpdates) {
     return blockchainTx;
@@ -21,7 +20,9 @@ export function adaptBlockchainTransaction(blockchainTx: any): any {
       accountUpdates,
       hash: blockchainTx.txHash,
       blockHeight: blockchainTx.blockHeight,
-      memo: blockchainTx.memo || ''
+      memo: blockchainTx.memo || '',
+      status: blockchainTx.txStatus,
+      failures: blockchainTx.failures || []
     },
     originalBlockchainData: blockchainTx // Keep the original data for reference
   };
@@ -29,6 +30,12 @@ export function adaptBlockchainTransaction(blockchainTx: any): any {
 
 
 const createAUFromBlockchainData = (account: any, index: number, tx: any): any => {
+  // Check if this update failed
+  const isFailedUpdate = tx.failures && tx.failures.some((f: any) => f.index === index);
+  const failureReason = isFailedUpdate 
+    ? tx.failures.find((f: any) => f.index === index)?.failureReason 
+    : undefined;
+  
   const isProof = account.update?.permissions?.editState === 'proof' || 
                   account.update?.permissions?.send === 'proof';
   const isSignature = account.update?.permissions?.incrementNonce === 'signature' || 
@@ -43,9 +50,13 @@ const createAUFromBlockchainData = (account: any, index: number, tx: any): any =
                      isProof;
   
   // Create a label for the account update
-  const label = isContract ? `Contract-${account.accountAddress.substring(0, 8)}` : 
+  let label = isContract ? `Contract-${account.accountAddress.substring(0, 8)}` : 
                `Account-${account.accountAddress.substring(0, 8)}`;
   
+  // Add status to label if failed
+  if (isFailedUpdate) {
+    label = `[FAILED] ${label}`;
+  }
   // Create authorization based on permissions
   const authorization: any = {};
   if (isProof) {
@@ -53,6 +64,10 @@ const createAUFromBlockchainData = (account: any, index: number, tx: any): any =
   } else if (isSignature) {
     authorization.signature = true;
   }
+
+  // Extract and process state updates
+  const stateUpdates = extractStateUpdates(account.update);
+
 
   // Create balance change info
   const balanceChange = account.totalBalanceChange || 0;
@@ -77,7 +92,7 @@ const createAUFromBlockchainData = (account: any, index: number, tx: any): any =
         toString: () => (isNegative ? '-' : '') + Math.abs(balanceChange).toString()
       },
       update: {
-        appState: account.update?.appState,
+        appState: extractAppState(account.update),
         verificationKey: {
           value: {
             hash: account.verificationKeyHash,
@@ -88,8 +103,81 @@ const createAUFromBlockchainData = (account: any, index: number, tx: any): any =
           value: mapPermissions(account.update?.permissions)
         }
       }
+    },
+    // Additional metadata for blockchain-specific information
+    metadata: {
+      callDepth: account.callDepth || 0,
+      tokenId: account.tokenId,
+      isZkappAccount: account.isZkappAccount,
+      incrementNonce: account.incrementNonce,
+      failed: isFailedUpdate,
+      failureReason: failureReason,
+      stateUpdates: stateUpdates
     }
   };
+}
+
+const extractAppState = (update: any): any[] => {
+  if (!update || !update.appState || !Array.isArray(update.appState)) {
+    return [];
+  }
+  
+  return update.appState.map((state: any) => state || '0');
+}
+
+const extractStateUpdates = (update: any): any[] => {
+  if (!update) return [];
+  
+  const stateUpdates = [];
+  
+  // Check appState
+  if (update.appState && Array.isArray(update.appState)) {
+    stateUpdates.push({
+      type: 'appState',
+      value: update.appState
+    });
+  }
+  
+  // Check for delegate changes
+  if (update.delegatee) {
+    stateUpdates.push({
+      type: 'delegate',
+      value: update.delegatee
+    });
+  }
+  
+  // Check for timing changes
+  if (update.timing) {
+    stateUpdates.push({
+      type: 'timing',
+      value: update.timing
+    });
+  }
+  
+  // Check for token symbol changes
+  if (update.tokenSymbol) {
+    stateUpdates.push({
+      type: 'tokenSymbol',
+      value: update.tokenSymbol
+    });
+  }
+  
+  // Check for other updates like votingFor or zkappUri
+  if (update.votingFor) {
+    stateUpdates.push({
+      type: 'votingFor',
+      value: update.votingFor
+    });
+  }
+  
+  if (update.zkappUri) {
+    stateUpdates.push({
+      type: 'zkappUri',
+      value: update.zkappUri
+    });
+  }
+  
+  return stateUpdates;
 }
 
 const mapPermissions = (permissions: any) => {
@@ -106,19 +194,20 @@ const mapPermissions = (permissions: any) => {
       proof: { toBoolean: () => isProof }
     };
   };
+
+  const permissionTypes = [
+    'editState', 'send', 'receive', 'setDelegate', 'setPermissions',
+    'setVerificationKey', 'setZkappUri', 'editActionState', 'setTokenSymbol',
+    'incrementNonce', 'setVotingFor', 'setTiming'
+  ];
   
-  return {
-    editState: createPermission('editState'),
-    send: createPermission('send'),
-    receive: createPermission('receive'),
-    setDelegate: createPermission('setDelegate'),
-    setPermissions: createPermission('setPermissions'),
-    setVerificationKey: createPermission('setVerificationKey'),
-    setZkappUri: createPermission('setZkappUri'),
-    editActionState: createPermission('editActionState'),
-    setTokenSymbol: createPermission('setTokenSymbol'),
-    incrementNonce: createPermission('incrementNonce'),
-    setVotingFor: createPermission('setVotingFor'),
-    setTiming: createPermission('setTiming')
-  };
+  const mappedPermissions: any = {};
+
+  permissionTypes.forEach(type => {
+    if (permissions[type] !== undefined) {
+      mappedPermissions[type] = createPermission(type);
+    }
+  });
+  
+  return mappedPermissions;
 }

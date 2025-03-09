@@ -1,8 +1,9 @@
 import { AccountUpdate, SmartContract } from 'o1js';
-import { TreeSnapshot, TreeOperation, ChangeLog, TransactionState, AUMetadata, AccountType, Edge, EnhancedTransactionState, ParsedAccountUpdate, TransactionNode, MethodAnalysis, ContractMetadata, ContractMethod, AccountUpdateRelationship, ContractAnalysis } from './Interface.js'
+import { TransactionState, AUMetadata, Edge, TransactionNode, AccountUpdateRelationship, ContractAnalysis } from './Interface.js'
 import { SmartContractAnalyzer } from './ContractAnalyser.js';
 import { AccountUpdateAnalyzer } from './AccountUpdateAnalyzer.js';
 import { adaptBlockchainTransaction } from './BlockchainAdapter.js';
+import { BlockchainFlowAnalyzer } from './BlockchainFlowAnalyzer.js';
 
 export class AUTrace {
     private transactionState: TransactionState;
@@ -26,7 +27,8 @@ export class AUTrace {
                 totalFees: 0,
                 accountUpdates: 0
             },
-            relationships: new Map()
+            relationships: new Map(),
+            blockchainData: undefined
         };
         
     }
@@ -48,6 +50,19 @@ export class AUTrace {
 
     private traverseTransaction = (transaction: any): void => {
         if (!transaction) return;
+
+        // Extract blockchain data if available
+        if (transaction.originalBlockchainData) {
+            const blockchainTx = transaction.originalBlockchainData;
+            this.transactionState.blockchainData = {
+                blockHeight: blockchainTx.blockHeight,
+                txHash: blockchainTx.txHash,
+                timestamp: blockchainTx.timestamp,
+                memo: blockchainTx.memo || '',
+                status: blockchainTx.txStatus || 'unknown',
+                failures: blockchainTx.failures || []
+            };
+        }
 
         const accountUpdates = transaction.transaction.accountUpdates || [];
         this.transactionState.metadata.accountUpdates = accountUpdates.length;
@@ -91,12 +106,23 @@ export class AUTrace {
 
         if (!this.transactionState.nodes.has(auMetadata.id)) {
             const nodeType = this.determineNodeType(au);
+            
+            // Extract additional metadata
+            const failed = (au as any).metadata?.failed || false;
+            const failureReason = (au as any).metadata?.failureReason;
+            const tokenId = (au as any).metadata?.tokenId;
+            const callDepth = (au as any).metadata?.callDepth || 0;
+            
             const node: TransactionNode = {
                 id: auMetadata.id,
                 type: nodeType,
                 label: auMetadata.label,
                 publicKey: auMetadata.publicKey,
-                contractType: this.extractContractType(au)
+                contractType: this.extractContractType(au),
+                failed,
+                failureReason,
+                tokenId,
+                callDepth
             };
             this.transactionState.nodes.set(auMetadata.id, node);
         }
@@ -107,6 +133,11 @@ export class AUTrace {
 
 
     private extractAUMetadata = (au: any): AUMetadata => {
+        // Extract label, checking if it's a failed operation
+        let label = au.label || 'Unnamed Update';
+        if ((au as any).metadata?.failed) {
+            label = `[FAILED] ${label}`;
+        }
         return {
             id: au.id.toString(),
             label: au.label || 'Unnamed Update',
@@ -114,7 +145,11 @@ export class AUTrace {
             publicKey: au.body.publicKey.toBase58(),
             balanceChange: au.body.balanceChange.toString(),
             methodName: au.lazyAuthorization?.methodName,
-            args: au.lazyAuthorization?.args
+            args: au.lazyAuthorization?.args,
+            // Additional metadata
+            failed: (au as any).metadata?.failed || false,
+            tokenId: (au as any).metadata?.tokenId,
+            callDepth: (au as any).metadata?.callDepth || 0
         };
     }
 
@@ -263,8 +298,11 @@ export class AUTrace {
                 totalFees: 0,
                 accountUpdates: 0
             },
-            relationships: new Map()
+            relationships: new Map(),
+            blockchainData: undefined
         };
+        // Also reset the account update analyzer
+        this.auAnalyzer.reset();
     };
 
     public getTransactionState = (transaction: any): TransactionState => {
@@ -275,6 +313,7 @@ export class AUTrace {
             this.transactionState.nodes = new Map();
             this.transactionState.edges = [];
             this.transactionState.relationships = new Map();
+            this.transactionState.blockchainData = undefined;
         }
 
         // Check if this is a blockchain transaction and adapt it if needed
@@ -287,6 +326,14 @@ export class AUTrace {
             transaction;
 
         this.traverseTransaction(processableTx);
+
+        // Reset the account update analyzer before processing
+        this.auAnalyzer.reset();
+
+        const accountUpdates = processableTx.transaction.accountUpdates || [];
+        accountUpdates.forEach((au: AccountUpdate) => {
+            this.auAnalyzer.processAccountUpdate(au);
+        });
 
         const auRelationships = this.auAnalyzer.getRelationships();
         const plainRelationships = new Map<string, AccountUpdateRelationship>();
@@ -302,17 +349,31 @@ export class AUTrace {
                 ? rel.children.join(', ')
                 : '';
             
-            const expandedMethod = rel.method
-                ? `Contract: ${rel.method.contract ?? ''}, Method: ${rel.method.name ?? ''}`
-                : 'N/A';
-    
-            const expandedStateChanges = Array.isArray(rel.stateChanges)
-                ? rel.stateChanges
-                      .map(change =>
-                          `Field: ${change.field ?? ''}, IsSome: ${change.value?.isSome ?? false}, Value: ${change.value?.value ?? '0'}`
-                      )
-                      .join(' | ')
-                : 'No State Changes';
+            let expandedMethod = 'N/A';
+            if (rel.method) {
+                if (typeof rel.method === 'object') {
+                    expandedMethod = `Contract: ${rel.method.contract ?? ''}, Method: ${rel.method.name ?? ''}`;
+                } else {
+                    expandedMethod = String(rel.method);
+                }
+            }
+            
+            let expandedStateChanges = 'No State Changes';
+            if (Array.isArray(rel.stateChanges) && rel.stateChanges.length > 0) {
+                expandedStateChanges = rel.stateChanges
+                    .map(change => {
+                        if (typeof change === 'object') {
+                            return `Field: ${change.field ?? ''}, Value: ${
+                                typeof change.value === 'object' 
+                                    ? (change.value?.value ?? '0') 
+                                    : (change.value ?? '0')
+                            }`;
+                        } else {
+                            return String(change);
+                        }
+                    })
+                    .join(' | ');
+            }
     
             plainRelationships.set(key, {
                 ...rel,
@@ -342,13 +403,16 @@ export class AUTrace {
                     ? `, Fee: ${operation.fee}`
                     : '';
 
+                const status = edge.failed ? 'failed' : (operation.status ?? 'success');
                 const flattenedOperation = `Sequence: ${operation.sequence ?? 'N/A'}, Type: ${operation.type ?? 'N/A'}, Status: ${operation.status ?? 'N/A'}${amount}${fee}`;
 
                 return {
                     id: edge.id,
                     fromNode: edge.fromNode,
                     toNode: edge.toNode,
-                    operation: flattenedOperation
+                    operation: flattenedOperation,
+                    failed: edge.failed,
+                    failureReason: edge.failureReason
                 };
             });     
             
@@ -371,37 +435,13 @@ export class AUTrace {
                 metadata: this.transactionState.metadata,
                 relationships: plainRelationships,
                 // Add metadata from blockchain transaction if available
-                blockchainData: isBlockchainTx ? {
-                    blockHeight: transaction.blockHeight,
-                    txHash: transaction.txHash,
-                    timestamp: transaction.timestamp,
-                    memo: transaction.memo,
-                    status: transaction.txStatus
-                } : undefined
+                blockchainData: this.transactionState.blockchainData
             }
 
         //this.transactionSnapshots = [...this.transactionSnapshots, state];
         this.transactionSnapshots = [...this.transactionSnapshots, finalState];
         
-        return {
-            nodes: this.transactionState.nodes,
-            edges: expandedEdges as any,
-            balanceStates: this.transactionState.balanceStates,
-            /*metadata: {
-                ...this.transactionState.metadata,
-                totalFees: this.getTotalFeesInMina()  // Add here to convert to MINA
-            },*/
-            metadata: this.transactionState.metadata,
-            relationships: plainRelationships,
-            // Include blockchain data in the return value
-            blockchainData: isBlockchainTx ? {
-                blockHeight: transaction.blockHeight,
-                txHash: transaction.txHash,
-                timestamp: transaction.timestamp,
-                memo: transaction.memo,
-                status: transaction.txStatus
-            } : undefined
-        };
+        return finalState;
 
     }
 
@@ -419,5 +459,13 @@ export class AUTrace {
 
     public getStateHistory() {
         return this.transactionSnapshots;
+    }
+
+    public getBlockchainTxnStateWithFlowAnalysis = (blockchainTx: any): TransactionState => {
+        // First get normal transaction state
+        const txState = this.getBlockchainTransactionState(blockchainTx);
+        const onchainFlowAnalyzer = new BlockchainFlowAnalyzer()
+        // Then enhance it with flow analysis
+        return onchainFlowAnalyzer.enhanceTransactionState(txState, blockchainTx);
     }
 }
