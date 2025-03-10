@@ -86,21 +86,47 @@ export class AUTrace {
         }*/
         // Calculate fees
         if (au.body.balanceChange) {
-            const magnitude = au.body.balanceChange.magnitude.toString();
+            //const magnitude = au.body.balanceChange.magnitude.toString();
+            let magnitudeRaw = au.body.balanceChange.magnitude;
+            let magnitude: bigint;
+            if (typeof magnitudeRaw === "bigint") {
+                magnitude = magnitudeRaw;
+            } else if (typeof magnitudeRaw === "string") {
+                if (/^\d+$/.test(magnitudeRaw)) {
+                    // String contains an integer (e.g., "1000000000"), convert directly
+                    magnitude = BigInt(magnitudeRaw);
+                } else if (/^\d+\.\d+$/.test(magnitudeRaw)) {
+                    // String contains a decimal (e.g., "0.467684313"), convert safely
+                    const magnitudeFloat = parseFloat(magnitudeRaw);
+                    magnitude = BigInt(Math.round(magnitudeFloat * 1e9)); // Convert MINA to nanomina
+                } else {
+                    throw new Error(`Unexpected magnitude string format: ${magnitudeRaw}`);
+                }
+            } else if (typeof magnitudeRaw === "number") {
+                // If it's already a float, multiply and round before converting
+                const magnitudeInteger = Math.round(magnitudeRaw * 1e9); // Convert MINA to nanomina
+                magnitude = BigInt(magnitudeInteger);
+            } else {
+                throw new Error(`Unexpected magnitude type: ${typeof magnitudeRaw}, value: ${magnitudeRaw}`);
+            }
+
+            //console.log("DEBUG: Converted magnitude to BigInt:", magnitude)
             // If balance change is negative, it's a fee
             if (au.body.balanceChange.isNegative()) {
                 // Convert to nanomina
-                const feesInNanomina = BigInt(magnitude);
+                //const feesInNanomina = BigInt(magnitude);
+                const feesInNanomina = magnitude;
                 
                 // Convert current total from MINA to nanomina for calculation
                 const currentTotalNanomina = this.transactionState.metadata.totalFees === 0 
-                    ? BigInt(0) 
-                    : BigInt(this.transactionState.metadata.totalFees * 1e9);
+                    //? BigInt(0) 
+                    ? 0n
+                    : BigInt(Math.round(Number(this.transactionState.metadata.totalFees) * 1e9));
                         
                 const newTotalNanomina = currentTotalNanomina + feesInNanomina;
                 
                 // Convert back to MINA and store as number
-                this.transactionState.metadata.totalFees = Number(newTotalNanomina) / 1e9;
+                this.transactionState.metadata.totalFees = Number(newTotalNanomina) / 1_000_000_000;
             }
         }
 
@@ -248,9 +274,11 @@ export class AUTrace {
         const currentBalance = this.transactionState.balanceStates.get(auMetadata.id) || [0];
         // Get the last known balance
         const lastBalance = currentBalance[currentBalance.length - 1] ?? 0;
-        const balanceChange = auMetadata.balanceChange ? 
-            BigInt(auMetadata.balanceChange) : 
-            BigInt(0);
+
+        //console.log("DEBUG: Converting balanceChange to BigInt:", auMetadata.balanceChange, "Type:", typeof auMetadata.balanceChange);
+        const balanceChange = auMetadata.balanceChange
+            ? BigInt(Math.round(Number(auMetadata.balanceChange) * 1e9))
+            : 0n;
         const newBalance = BigInt(lastBalance?.toString()) + balanceChange;
         currentBalance.push(Number(newBalance));
         this.transactionState.balanceStates.set(auMetadata.id, currentBalance);

@@ -4,6 +4,7 @@ import util from 'util';
 import { EntityInfo, FlowOperation, TransactionState } from './Interface.js';
 import * as d3 from 'd3';
 import { JSDOM } from 'jsdom';
+import sharp from 'sharp';
 
 const exec = util.promisify(child_process.exec);
 
@@ -562,15 +563,19 @@ export class AUVisualizer {
     private buildEdgesIfMissing(txState: TransactionState): TransactionState {
         // If edges already exist, don't do anything
         if (txState.edges && txState.edges.length > 0) {
+            console.log(`Edges already exist (${txState.edges.length}), skipping edge generation`);
             return txState;
         }
         
         const edges: any[] = [];
         const nodeIds = Array.from(txState.nodes.keys());
+        console.log(`Found ${nodeIds.length} nodes for edge generation`);
         
         // Fee payer relationship - connect fee payer to other accounts
         const feePayer = this.findFeePayer(txState);
+        console.log(`Fee payer detection result: ${feePayer || 'None found'}`);
         if (feePayer) {
+            console.log(`Connecting fee payer ${feePayer} to all other nodes`);
             // Connect fee payer to all other nodes (except itself)
             nodeIds.forEach(nodeId => {
                 if (nodeId !== feePayer) {
@@ -585,6 +590,7 @@ export class AUVisualizer {
         }
         
         // Sequential relationships - create a chain of operations in sequence
+        console.log(`Creating sequential edges for ${nodeIds.length} nodes`);
         for (let i = 0; i < nodeIds.length - 1; i++) {
             // Skip if this would create a duplicate edge
             if (!edges.some(e => e.fromNode === nodeIds[i] && e.toNode === nodeIds[i+1])) {
@@ -599,8 +605,10 @@ export class AUVisualizer {
         
         // Token relationships - connect operations on the same token
         const tokenGroups = this.groupNodesByToken(txState);
+        console.log(`Found ${tokenGroups.size} token groups`);
         tokenGroups.forEach((nodeIds, tokenId) => {
             if (nodeIds.length > 1 && tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') {
+                console.log(`Creating edges for token ${tokenId.substring(0, 10)}...`);
                 for (let i = 0; i < nodeIds.length - 1; i++) {
                     edges.push({
                         fromNode: nodeIds[i],
@@ -611,7 +619,7 @@ export class AUVisualizer {
                 }
             }
         });
-        
+        console.log(`Generated ${edges.length} edges total`);
         // Return updated state with edges
         return {
             ...txState,
@@ -623,21 +631,26 @@ export class AUVisualizer {
     private findFeePayer(txState: TransactionState): string | undefined {
         // Try to find fee payer from blockchain data
         if (txState.blockchainData?.feePayerAddress) {
+            console.log(`Found feePayerAddress in blockchain data: ${txState.blockchainData.feePayerAddress.substring(0, 10)}...`);
             // Look for node with matching address
             for (const [id, node] of txState.nodes.entries()) {
                 if (node.publicKey === txState.blockchainData.feePayerAddress) {
+                    console.log(`Found fee payer node by address match: ${id}`);
                     return id;
                 }
             }
+            console.log("No node with matching feePayerAddress found");
         }
         
         // Alternatively, look for node with negative balance change
         for (const [id, node] of txState.nodes.entries()) {
+            console.log(`Node ${id} balance change: ${node.balanceChange || 'undefined'}`);
             if (node.balanceChange && node.balanceChange < 0) {
+                console.log(`Found fee payer node by negative balance: ${id}`);
                 return id;
             }
         }
-        
+        console.log("No fee payer found");
         return undefined;
     }
 
@@ -656,11 +669,11 @@ export class AUVisualizer {
         return tokenGroups;
     }
 
-    public async generateBlockchainFlowSVG(txState: TransactionState, outputPath: string = 'blockchain_flow.svg'): Promise<string> {
+    private async generateBlockchainFlowSVG(txState: TransactionState, outputPath: string = 'blockchain_flow.svg'): Promise<string> {
         try {
 
             txState = this.buildEdgesIfMissing(txState);
-            
+
             // Create a virtual DOM for server-side rendering
             const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
             const document = dom.window.document;
@@ -728,11 +741,17 @@ export class AUVisualizer {
             
             // Process nodes
             txState.nodes.forEach((node, id) => {
+                const publicKey = node.publicKey || '';
+                // Format address as xxxx....xxxxx (first 4 and last 4 characters)
+                const shortAddress = publicKey.length > 8 
+                    ? `${publicKey.substring(0, 6)}....${publicKey.substring(publicKey.length - 6)}`
+                    : publicKey;
                 const nodeData = {
                     id,
                     label: node.label || 'Unknown',
                     publicKey: node.publicKey,
-                    shortAddress: node.publicKey.substring(0, 10) + '...',
+                    //shortAddress: node.publicKey.substring(0, 10) + '...',
+                    shortAddress: shortAddress,
                     type: node.type,
                     failed: !!node.failed,
                     failureReason: node.failureReason,
@@ -828,6 +847,7 @@ export class AUVisualizer {
                 .attr('stroke', d => d.failed ? 'red' : '#333')
                 .attr('stroke-width', 2);
             
+            /*
             // Add labels to nodes
             node.append('text')
                 .attr('dy', 5)
@@ -847,6 +867,26 @@ export class AUVisualizer {
                     if (d.failed) return d.failureReason ? d.failureReason.substring(0, 15) : 'Failed';
                     if (d.tokenId && d.tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') return 'Custom Token';
                     return d.type === 'contract' ? 'Contract' : 'Account';
+                });
+            */
+            // Add address below the node
+            node.append('text')
+                .attr('dy', 40)
+                .attr('text-anchor', 'middle')
+                .attr('font-family', 'Arial')
+                .attr('font-size', '12px')
+                .text(d => d.shortAddress);
+
+            // Add additional info (failure reason) if needed
+            node.append('text')
+                .attr('dy', 55)
+                .attr('text-anchor', 'middle')
+                .attr('font-family', 'Arial')
+                .attr('font-size', '10px')
+                .attr('fill', 'red')
+                .text(d => {
+                    if (d.failed && d.failureReason) return d.failureReason.substring(0, 15);
+                    return '';
                 });
             
             // Add legend
@@ -891,9 +931,42 @@ export class AUVisualizer {
         }
     }
 
+    private convertSvgToPngWithSharp = async (svgPath: string, pngPath: string): Promise<string> => {
+        try {
+            const svgBuffer = await fs.readFile(svgPath);
+            
+            await sharp(svgBuffer)
+                .png()
+                .flatten({ background: { r: 255, g: 255, b: 255 } }) // Add white background
+                .toFile(pngPath);
+            
+            console.log(`Successfully converted SVG to PNG at: ${pngPath}`);
+            return pngPath;
+        } catch (error) {
+            console.error('Error converting SVG to PNG:', error);
+            throw error;
+        }
+    }
+
+    public generateBlockchainFlowWithPng = async (txState: TransactionState, svgPath: string = 'blockchain_flow.svg', pngPath: string = 'blockchain_flow.png'): Promise<{svgPath: string, pngPath: string}> => {
+        try {
+            await this.generateBlockchainFlowSVG(txState, svgPath);
+            
+            await this.convertSvgToPngWithSharp(svgPath, pngPath);
+            
+            return {
+                svgPath,
+                pngPath
+            };
+        } catch (error) {
+            console.error('Error generating blockchain flow PNG:', error);
+            throw error;
+        }
+    }
+
     public async generateBlockchainVisualization(
         txState: TransactionState,
-        outputFormat: 'svg' | 'png' | 'md' = 'svg',
+        outputFormat: 'svg' | 'png' | 'md' = 'png',
         outputPath?: string
     ): Promise<string> {
         // Default output paths based on format
@@ -909,26 +982,18 @@ export class AUVisualizer {
             case 'svg':
                 return this.generateBlockchainFlowSVG(txState, finalOutputPath);
             
-            case 'png':
-                // For PNG, first generate SVG then convert to PNG
-                const svgPath = await this.generateBlockchainFlowSVG(txState, 'temp_blockchain_flow.svg');
-                try {
-                    // Convert SVG to PNG using external tool
-                    const command = `convert -density 300 ${svgPath} ${finalOutputPath}`;
-                    await exec(command);
-                    
-                    // Clean up temporary SVG
-                    await fs.unlink(svgPath);
-                    
-                    console.log(`Successfully generated blockchain flow PNG at: ${finalOutputPath}`);
-                    return finalOutputPath;
-                } catch (error) {
-                    console.error('Error converting SVG to PNG:', error);
-                    throw error;
-                }
+                case 'png':
+                    const tempSvgPath = 'temp_blockchain_flow.svg';
+                    try {
+                        const result = await this.generateBlockchainFlowWithPng(txState, tempSvgPath, finalOutputPath);
+                        await fs.unlink(tempSvgPath);                        
+                        return finalOutputPath;
+                    } catch (error) {
+                        console.error('Error generating blockchain flow PNG:', error);
+                        throw error;
+                    }
             
             case 'md':
-                // Generate markdown analysis
                 const markdown = this.generateBlockchainMarkdown(txState);
                 await fs.writeFile(finalOutputPath, markdown);
                 console.log(`Successfully generated blockchain analysis markdown at: ${finalOutputPath}`);
@@ -936,19 +1001,40 @@ export class AUVisualizer {
         }
     }
 
-    public async generateTransactionVisualization(
+    public generateTransactionVisualization = async (
         txState: TransactionState,
-        outputPath: string = 'transaction_visualization.svg'
-    ): Promise<void> {
+        outputFormat: 'svg' | 'png' = 'png',
+        outputPath?: string
+    ): Promise<void> => {
+        const defaultPaths = {
+            'svg': 'transaction_visualization.svg',
+            'png': 'transaction_visualization.png'
+        };
+        
+        const finalOutputPath = outputPath || defaultPaths[outputFormat];
+        
         // Detect if this is a blockchain transaction
         const isBlockchainTx = !!txState.blockchainData;
         
         if (isBlockchainTx) {
-            // Use blockchain-specific visualization
-            this.generateBlockchainFlowSVG(txState, outputPath);
+            this.generateBlockchainVisualization(txState, outputFormat, finalOutputPath);
+            //this.generateBlockchainFlowSVG(txState, outputPath);
         } else {
             // Use standard visualization
-            this.generateSVG(outputPath);
+            if (outputFormat === 'svg') {
+                return this.generateSVG(finalOutputPath);
+            } else {     
+                const tempSvgPath = 'temp_transaction_visualization.svg';   
+                await this.generateSVG(tempSvgPath);
+                try {                    
+                    await this.convertSvgToPngWithSharp(tempSvgPath, finalOutputPath);
+                    await fs.unlink(tempSvgPath);                    
+                    console.log(`Successfully generated transaction PNG at: ${finalOutputPath}`);                    
+                } catch (error) {
+                    console.error('Error converting SVG to PNG:', error);
+                    throw error;
+                }
+            }
         }
     }
 

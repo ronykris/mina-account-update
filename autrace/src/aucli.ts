@@ -19,13 +19,13 @@ yargs(hideBin(process.argv))
     describe: 'Transaction hash to analyze',
     type: 'string',
   })
-  .option('file', {
+  /*.option('file', {
     alias: 'f',
     describe: 'JSON file containing transaction data',
     type: 'string',
-  })
+  })*/
   .example('$0 --tx 5JuCdmp1PeRnnXhJJ5pHCDC7N3wpBG49DxBG82N8o49f8K7YcDpZ', 'Analyze transaction from the blockchain')
-  .example('$0 --file ./transaction.json', 'Analyze transaction from a local file')  
+  //.example('$0 --file ./transaction.json', 'Analyze transaction from a local file')  
   .check((argv) => {
     if (argv.tx && argv.file) {
       throw new Error('Please provide either --tx or --file, not both');
@@ -73,16 +73,15 @@ const main = async (argv: any) => {
     autrace.clearTransactionState();
 
     console.log(chalk.yellow('Analyzing transaction...'));
-    const txState = autrace.getTransactions(transactionData);    
-    
+    autrace.getTransactions(transactionData);    
+    //console.log(chalk.yellow('Fetching history...'));
     const history = autrace.getStateHistory();
     history.forEach((state, index) => {
       console.log(`State ${index}:`, state);
     });
     
-    const visualizer = new AUVisualizer(history);
-    const svg = await visualizer.generateBlockchainFlowSVG(history[0], 'blockchain_flow.svg');
-    const svg1 = await visualizer.generateTransactionVisualization(history[0], 'output.svg');
+    const visualizer = new AUVisualizer(history);    
+    await visualizer.generateTransactionVisualization(history[0]);
     
   } catch (error) {
     console.error(chalk.red('Error:'), error instanceof Error ? error.message : String(error));
