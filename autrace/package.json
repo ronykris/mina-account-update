@@ -4,6 +4,9 @@
   "description": "Account Update analyser for MINA",
   "main": "build/src/index.js",
   "types": "build/src/index.d.ts",
+  "bin": {
+    "aucli": "build/src/aucli.js"
+  },
   "files": [
     "build",
     "README.md",
@@ -35,16 +38,28 @@
   ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc"
+    "build": "tsc",
+    "version": "npm run build && git add .",
+    "prepublishOnly": "npm run build",
+    "postversion": "git push && git push --tags",
+    "aucli": "node ./build/src/aucli.js --tx 5JtfKFZWH2sdVGL8U93nxD5cQDZuRaNyj3pCvgQHKTLqXQVFBTid"
   },
-  "author": "krish",
-  "license": "ISC",
+  "author": "0xkrish",
+  "license": "MIT",
   "devDependencies": {
+    "@types/jsdom": "^21.1.7",
     "@types/node": "^22.13.0",
+    "@types/yargs": "^17.0.33",
     "typescript": "^5.7.3"
   },
   "dependencies": {
     "@mermaid-js/mermaid-cli": "^11.4.2",
-    "o1js": "^2.2.0"
+    "axios": "^1.8.1",
+    "d3": "^7.9.0",
+    "dotenv": "^16.4.7",
+    "jsdom": "^26.0.0",
+    "o1js": "^2.2.0",
+    "sharp": "^0.33.5",
+    "yargs": "^17.7.2"
   }
 }

@@ -28,6 +28,11 @@ interface TransactionNode {
     contractType?: string;
     features?: Record<string, any>;
     contractMetadata?: ContractMetadata;
+    failed?: boolean;
+    failureReason?: string;
+    tokenId?: string;
+    callDepth?: number;
+    balanceChange?: number;
 }
 
 interface TransactionEdge {
@@ -50,7 +55,8 @@ interface TransactionState {
         totalFees: number;
         accountUpdates: number;
     };
-    relationships: Map<string, AccountUpdateRelationship>;  // Update this line
+    relationships: Map<string, AccountUpdateRelationship>;
+    blockchainData?: BlockchainData;
 }
 
 interface Edge {
@@ -67,6 +73,8 @@ interface Edge {
         };
         fee?: string;
     };
+    failed?: boolean;
+    failureReason?: string;
 }
 
 interface AUMetadata {
@@ -77,6 +85,9 @@ interface AUMetadata {
     balanceChange: string;
     methodName?: string;
     args?: any[];
+    failed?: boolean;
+    tokenId?: string;
+    callDepth?: number;
 }
 
 type AccountType = 'account' | 'contract';
@@ -191,7 +202,9 @@ interface AccountUpdateRelationship {
             field: string;
             value: any;
         }[];
-    
+        tokenId?: string;
+        failed?: boolean;
+        failureReason?: string;    
 }
 
 interface PlainRelationshipMap {
@@ -217,4 +230,57 @@ interface FlowOperation {
     parameters?: Record<string, string>;
 }
 
-export { TreeSnapshot, EntityInfo, FlowOperation, PlainRelationshipMap, AccountUpdateRelationship, TreeOperation, ContractAnalysis, ChangeLog, ContractMethod, MethodAccountUpdate, AUMetadata, Edge, TransactionNode, TransactionState, AccountType, ContractMetadata, MethodAnalysis, EnhancedTransactionState, ParsedAccountUpdate };
+interface BlockchainData {
+    blockHeight?: number;
+    txHash?: string;
+    timestamp?: number;
+    memo?: string;
+    status?: string;
+    failures?: Array<{index: number, failureReason: string}>;
+    flowGraph?: TransactionFlowGraph;
+    feePayerAddress?: string;
+}
+
+interface ProcessedAccount {
+    id: string;
+    index: number;
+    address: string;
+    shortAddress: string;
+    isContract: boolean;
+    callDepth: number;
+    tokenId: string;
+    tokenSymbol: string;
+    balanceChange: number;
+    failed: boolean;
+    failureReason: string | null;
+    isRootFailure?: boolean;
+    stateValues: string[];
+    callData: string | null;
+    permissions: any;
+  }
+
+  interface Relationship {
+    from: string;
+    to: string;
+    type: string;
+    label: string;
+    color: string;
+    failed?: boolean;
+    style?: string;
+  }
+  
+  interface TransactionFlowGraph {
+    metadata: {
+      txHash: string;
+      status: string;
+      blockHeight: number;
+      timestamp: number;
+      fee: number;
+      feePayerAddress: string;
+      memo: string;
+    };
+    nodes: ProcessedAccount[];
+    edges: Relationship[];
+  }
+
+export { Relationship, ProcessedAccount, TransactionFlowGraph, TreeSnapshot, BlockchainData, EntityInfo, FlowOperation, PlainRelationshipMap, AccountUpdateRelationship, TreeOperation, ContractAnalysis, ChangeLog, ContractMethod, MethodAccountUpdate, AUMetadata, Edge, TransactionNode, TransactionState, AccountType, ContractMetadata, MethodAnalysis, EnhancedTransactionState, ParsedAccountUpdate };
