@@ -1,6 +1,6 @@
 {
   "name": "autrace",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Account Update analyser for MINA",
   "main": "build/src/index.js",
   "types": "build/src/index.d.ts",
