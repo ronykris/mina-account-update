@@ -4,6 +4,7 @@ import { SmartContractAnalyzer } from './ContractAnalyser.js';
 import { AccountUpdateAnalyzer } from './AccountUpdateAnalyzer.js';
 import { adaptBlockchainTransaction } from './BlockchainAdapter.js';
 import { BlockchainFlowAnalyzer } from './BlockchainFlowAnalyzer.js';
+import { UInt64, Field } from 'o1js';
 
 export class AUTrace {
     private transactionState: TransactionState;
@@ -87,7 +88,8 @@ export class AUTrace {
         // Calculate fees
         if (au.body.balanceChange) {
             //const magnitude = au.body.balanceChange.magnitude.toString();
-            let magnitudeRaw = au.body.balanceChange.magnitude;
+            let magnitudeRaw = au.body.balanceChange.magnitude as UInt64;
+
             let magnitude: bigint;
             if (typeof magnitudeRaw === "bigint") {
                 magnitude = magnitudeRaw;
