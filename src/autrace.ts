@@ -86,10 +86,10 @@ export class AUTrace {
             this.transactionState.metadata.totalSignatures++;
         }*/
         // Calculate fees
+        
         if (au.body.balanceChange) {
             //const magnitude = au.body.balanceChange.magnitude.toString();
-            let magnitudeRaw = au.body.balanceChange.magnitude as UInt64;
-
+            let magnitudeRaw: any = au.body.balanceChange.magnitude;
             let magnitude: bigint;
             if (typeof magnitudeRaw === "bigint") {
                 magnitude = magnitudeRaw;
@@ -108,9 +108,25 @@ export class AUTrace {
                 // If it's already a float, multiply and round before converting
                 const magnitudeInteger = Math.round(magnitudeRaw * 1e9); // Convert MINA to nanomina
                 magnitude = BigInt(magnitudeInteger);
+            } else if (typeof magnitudeRaw === "object" && magnitudeRaw !== null && "value" in magnitudeRaw) {                
+                // If the object contains a `value` field, extract it
+                //console.log("DEBUG: magnitudeRaw keys:", Object.keys(magnitudeRaw));
+
+                // ✅ Handle case where magnitudeRaw is already UInt64
+                if (magnitudeRaw instanceof UInt64) {
+                    magnitude = magnitudeRaw.toBigInt();
+                    //console.log("DEBUG: magnitudeRaw is already UInt64, extracted BigInt:", magnitude);
+                } else if (magnitudeRaw.value instanceof Field) {                        
+                    magnitude = magnitudeRaw.value.toBigInt();
+                    //console.log("DEBUG: Converted Field to BigInt:", magnitude);
+                } else {
+                    throw new Error(`Unexpected magnitude type inside object: ${typeof magnitudeRaw.value}, value: ${magnitudeRaw.value}`);
+                }
             } else {
-                throw new Error(`Unexpected magnitude type: ${typeof magnitudeRaw}, value: ${magnitudeRaw}`);
-            }
+                throw new Error(`Unexpected magnitude type or structure: ${typeof magnitudeRaw}, value: ${JSON.stringify(magnitudeRaw)}`);
+            }        
+        
+
 
             //console.log("DEBUG: Converted magnitude to BigInt:", magnitude)
             // If balance change is negative, it's a fee

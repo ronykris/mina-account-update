@@ -58,7 +58,7 @@ const main = async (argv: any) => {
     if (argv.tx) {
       console.log(chalk.yellow(`Fetching transaction ${argv.tx} from API...`));
       transactionData = await fetchZkAppTransactionByHash(argv.tx as string);
-      console.log(transactionData)
+      //console.log(transactionData)
     } else if (argv.file) {
       console.log(chalk.yellow(`Loading transaction from file ${argv.file}...`));
       transactionData = loadTransactionFromFile(argv.file as string);
