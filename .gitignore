@@ -14,5 +14,4 @@ keys
 mina-projects-test/
 mina-projects-test/accountUpdates/
 mina-projects-test/mina-fungible-token/
-package-lock.json
 *.tgz
