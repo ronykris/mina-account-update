@@ -112,7 +112,9 @@ Visualize any zkapp transaction from the chain like so
 ```bash
 BLOCKBERRY_API_KEY=your_api_key npx aucli --tx 5JttgfFUzZXfYYksdbZHms7eDvqwvzvf65GuirsAcNaZpFC5BC5z
 ```
-This will generate a `transaction_visualization.png` with the visulaisation.
+This will generate a `transaction_visualization.png` with the visualisation like so:
+
+![TXNCisualizer](transaction_visualization.png)
 
 
 ### Important Notes
