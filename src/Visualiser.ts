@@ -671,15 +671,29 @@ export class AUVisualizer {
 
     private async generateBlockchainFlowSVG(txState: TransactionState, outputPath: string = 'blockchain_flow.svg'): Promise<string> {
         try {
-
+            // Build edges if missing
             txState = this.buildEdgesIfMissing(txState);
-
+    
             // Create a virtual DOM for server-side rendering
             const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
             const document = dom.window.document;
             global.document = document;
             
-            // Create SVG container
+            // Define a modern color palette
+            const colors = {
+                background: '#f8fafc',
+                nodeStroke: '#475569',
+                account: '#bfdbfe',  // Light blue
+                contract: '#ddd6fe',  // Light purple
+                token: '#bbf7d0',    // Light green
+                failed: '#fecaca',   // Light red
+                text: '#1e293b',
+                failText: '#dc2626',
+                link: '#94a3b8',
+                linkFailed: '#ef4444'
+            };
+            
+            // Create SVG container with improved dimensions
             const width = 1200;
             const height = 800;
             const svg = d3.select(document.body)
@@ -687,45 +701,79 @@ export class AUVisualizer {
                 .attr('xmlns', 'http://www.w3.org/2000/svg')
                 .attr('width', width)
                 .attr('height', height)
-                .attr('viewBox', `0 0 ${width} ${height}`);
+                .attr('viewBox', `0 0 ${width} ${height}`)
+                .style('background-color', colors.background);
+                
+            // Add a subtle grid pattern for visual guidance
+            const defs = svg.append('defs');
+            defs.append('pattern')
+                .attr('id', 'grid')
+                .attr('width', 20)
+                .attr('height', 20)
+                .attr('patternUnits', 'userSpaceOnUse')
+                .append('path')
+                .attr('d', 'M 20 0 L 0 0 0 20')
+                .attr('fill', 'none')
+                .attr('stroke', '#e2e8f0')
+                .attr('stroke-width', 0.5);
+                
+            svg.append('rect')
+                .attr('width', width)
+                .attr('height', height)
+                .attr('fill', 'url(#grid)');
             
-            // Add title
+            // Add title with improved styling
             svg.append('text')
                 .attr('x', width / 2)
-                .attr('y', 30)
+                .attr('y', 40)
                 .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
-                .attr('font-size', '20px')
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('font-size', '22px')
                 .attr('font-weight', 'bold')
+                .attr('fill', colors.text)
                 .text(`Transaction Flow: ${txState.blockchainData?.txHash?.substring(0, 16) || 'Unknown'}...`);
             
-            // Add status
-            svg.append('text')
-                .attr('x', width / 2)
-                .attr('y', 60)
+            // Add transaction status with badge-like styling
+            const statusGroup = svg.append('g')
+                .attr('transform', `translate(${width / 2}, 70)`);
+                
+            const status = txState.blockchainData?.status || 'Unknown';
+            const statusColor = status === 'Applied' ? '#22c55e' : 
+                               status === 'Pending' ? '#f59e0b' : 
+                               status === 'Failed' ? '#ef4444' : '#94a3b8';
+                               
+            statusGroup.append('rect')
+                .attr('x', -60)
+                .attr('y', -18)
+                .attr('width', 120)
+                .attr('height', 26)
+                .attr('rx', 13)
+                .attr('ry', 13)
+                .attr('fill', statusColor);
+                
+            statusGroup.append('text')
                 .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
-                .attr('font-size', '16px')
-                .text(`Status: ${txState.blockchainData?.status || 'Unknown'}`);
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('font-size', '14px')
+                .attr('font-weight', 'bold')
+                .attr('fill', 'white')
+                .attr('dy', 5)
+                .text(`Status: ${status.toLowerCase()}`);
             
             // Create arrow markers for different relationship types
-            const defs = svg.append('defs');
             const markers = [
-                { id: 'arrow-black', color: 'black' },
-                { id: 'arrow-red', color: 'red' },
-                { id: 'arrow-green', color: 'green' },
-                { id: 'arrow-blue', color: 'blue' },
-                { id: 'arrow-purple', color: 'purple' }
+                { id: 'arrow-standard', color: colors.link },
+                { id: 'arrow-failed', color: colors.linkFailed }
             ];
             
             markers.forEach(marker => {
                 defs.append('marker')
                     .attr('id', marker.id)
                     .attr('viewBox', '0 0 10 10')
-                    .attr('refX', 25)
+                    .attr('refX', 27)
                     .attr('refY', 5)
-                    .attr('markerWidth', 6)
-                    .attr('markerHeight', 6)
+                    .attr('markerWidth', 8)
+                    .attr('markerHeight', 8)
                     .attr('orient', 'auto')
                     .append('path')
                     .attr('d', 'M 0 0 L 10 5 L 0 10 z')
@@ -736,9 +784,6 @@ export class AUVisualizer {
             const nodesArray: any[] = [];
             const nodeMap = new Map();
             
-            // Debug information
-            console.log(`Processing transaction state with ${txState.nodes.size} nodes and ${txState.edges.length} edges`);
-            
             // Process nodes
             txState.nodes.forEach((node, id) => {
                 const publicKey = node.publicKey || '';
@@ -746,178 +791,384 @@ export class AUVisualizer {
                 const shortAddress = publicKey.length > 8 
                     ? `${publicKey.substring(0, 6)}....${publicKey.substring(publicKey.length - 6)}`
                     : publicKey;
+                    
                 const nodeData = {
                     id,
                     label: node.label || 'Unknown',
                     publicKey: node.publicKey,
-                    //shortAddress: node.publicKey.substring(0, 10) + '...',
                     shortAddress: shortAddress,
                     type: node.type,
                     failed: !!node.failed,
                     failureReason: node.failureReason,
                     tokenId: node.tokenId,
-                    // These will be filled in by the simulation
-                    x: undefined,
-                    y: undefined
+                    // For hierarchical layout
+                    children: [],
+                    level: 0,
+                    column: 0,
+                    parents: []
                 };
                 
                 nodesArray.push(nodeData);
                 nodeMap.set(id, nodeData);
             });
             
-            // Extract edges
+            // Prepare edges and build parent-child relationships
             const linksArray: any[] = [];
             
             txState.edges.forEach((edge, i) => {
-                // Validate source and target nodes exist
                 if (nodeMap.has(edge.fromNode) && nodeMap.has(edge.toNode)) {
+                    const source = nodeMap.get(edge.fromNode);
+                    const target = nodeMap.get(edge.toNode);
+                    
+                    // Add child to parent
+                    source.children.push(target);
+                    
+                    // Add parent to child for bidirectional navigation
+                    target.parents.push(source);
+                    
+                    // Create a formatted operation string
+                    let formattedOp = '';
+                    if (edge.operation) {
+                        const opStr = typeof edge.operation === 'string' ? edge.operation : JSON.stringify(edge.operation);
+                        
+                        // Extract useful information from operation string
+                        const matchType = opStr.match(/Type:\s*([\w]+)/);
+                        
+                        if (matchType) {
+                            formattedOp = matchType[1];
+                        } else if (opStr.length > 20) {
+                            formattedOp = opStr.substring(0, 17) + '...';
+                        } else {
+                            formattedOp = opStr;
+                        }
+                    }
+                    
                     linksArray.push({
                         id: `edge${i}`,
-                        source: nodeMap.get(edge.fromNode),
-                        target: nodeMap.get(edge.toNode),
+                        source: source,
+                        target: target,
                         operation: edge.operation,
+                        formattedOperation: formattedOp,
                         failed: !!edge.failed
                     });
-                } else {
-                    console.warn(`Edge references non-existent node: ${edge.fromNode} -> ${edge.toNode}`);
                 }
             });
             
-            console.log(`Processed ${nodesArray.length} nodes and ${linksArray.length} links for visualization`);
+            // Find root nodes (nodes with no parents)
+            const rootNodes = nodesArray.filter(node => node.parents.length === 0);
             
-            // Set initial positions manually (in a grid layout) instead of using force simulation
-            const gridCols = Math.ceil(Math.sqrt(nodesArray.length));
-            const cellWidth = width / (gridCols + 1);
-            const cellHeight = height / (Math.ceil(nodesArray.length / gridCols) + 1);
+            // If no root nodes found, use the first node as root
+            if (rootNodes.length === 0 && nodesArray.length > 0) {
+                rootNodes.push(nodesArray[0]);
+            }
             
-            nodesArray.forEach((node, i) => {
-                const row = Math.floor(i / gridCols);
-                const col = i % gridCols;
-                node.x = (col + 1) * cellWidth;
-                node.y = (row + 1) * cellHeight;
+            // Assign levels to nodes through breadth-first traversal
+            const assignLevels = () => {
+                const visited = new Set();
+                const queue = [...rootNodes];
+                
+                // Set all root nodes to level 0
+                rootNodes.forEach(node => {
+                    node.level = 0;
+                    visited.add(node.id);
+                });
+                
+                while (queue.length > 0) {
+                    const current = queue.shift();
+                    
+                    // Process all children
+                    current.children.forEach((child: { level: number; id: unknown; }) => {
+                        // Set child's level to parent's level + 1
+                        child.level = Math.max(child.level, current.level + 1);
+                        
+                        // Add to queue if not visited
+                        if (!visited.has(child.id)) {
+                            visited.add(child.id);
+                            queue.push(child);
+                        }
+                    });
+                }
+            };
+            
+            // Assign columns to nodes to minimize overlaps
+            const assignColumns = () => {
+                // Group nodes by level
+                const nodesByLevel: any = {};
+                nodesArray.forEach(node => {
+                    if (!nodesByLevel[node.level]) {
+                        nodesByLevel[node.level] = [];
+                    }
+                    nodesByLevel[node.level].push(node);
+                });
+                
+                // Assign columns for each level
+                Object.keys(nodesByLevel).forEach(level => {
+                    const nodesAtLevel = nodesByLevel[level];
+                    nodesAtLevel.forEach((node: any, i: any) => {
+                        node.column = i;
+                    });
+                });
+            };
+            
+            // Apply hierarchical layout algorithm
+            assignLevels();
+            assignColumns();
+            
+            // Calculate node positions based on their level and column
+            const nodeRadius = 25;
+            const horizontalSpacing = 180;  // Space between levels
+            const verticalSpacing = 100;    // Space between nodes at the same level
+            const topMargin = 150;          // Space from top for title and status
+            
+            // Group nodes by level
+            const levelGroups: {[key: string]: any[]} = {};
+            nodesArray.forEach(node => {
+                if (!levelGroups[node.level]) {
+                    levelGroups[node.level] = [];
+                }
+                levelGroups[node.level].push(node);
+            });
+
+            // Find the maximum level and count of nodes in each level
+            const maxLevel = Math.max(...nodesArray.map(node => node.level));
+            const maxNodesInLevel = Math.max(...Object.values(levelGroups).map((group: any[]) => group.length));
+
+            // Calculate horizontal start position to center the diagram
+            const diagramWidth = maxLevel * horizontalSpacing;
+            const horizontalStart = (width - diagramWidth) / 2;
+            
+            // Calculate vertical center positions for each level
+            const levelHeights: any = {};
+            Object.keys(levelGroups).forEach(level => {
+                const nodesCount = levelGroups[level].length;
+                levelHeights[level] = (height - topMargin) / 2 - ((nodesCount - 1) * verticalSpacing) / 2;
             });
             
-            // Draw links
+            // Assign coordinates to nodes
+            nodesArray.forEach(node => {
+                const levelHeight = levelHeights[node.level];
+                const nodesAtLevel = levelGroups[node.level];
+                const indexAtLevel = nodesAtLevel.indexOf(node);
+                
+                // Position with horizontal centering
+                node.x = horizontalStart + node.level * horizontalSpacing;
+                node.y = levelHeight + indexAtLevel * verticalSpacing;
+            });
+            
+            // Create links (edges) between nodes
             const link = svg.append('g')
-                .selectAll('line')
+                .selectAll('path')
                 .data(linksArray)
-                .enter().append('line')
-                .attr('x1', d => d.source.x)
-                .attr('y1', d => d.source.y)
-                .attr('x2', d => d.target.x)
-                .attr('y2', d => d.target.y)
-                .attr('stroke', d => d.failed ? 'red' : 'black')
+                .enter().append('path')
+                .attr('d', d => {
+                    // Use straight lines with slight curve for hierarchy
+                    return `M${d.source.x + nodeRadius},${d.source.y}
+                            C${d.source.x + horizontalSpacing/2},${d.source.y}
+                             ${d.target.x - horizontalSpacing/2},${d.target.y}
+                             ${d.target.x - nodeRadius},${d.target.y}`;
+                })
+                .attr('fill', 'none')
+                .attr('stroke', d => d.failed ? colors.linkFailed : colors.link)
                 .attr('stroke-width', 2)
                 .attr('stroke-dasharray', d => d.failed ? '5,5' : null)
-                .attr('marker-end', d => `url(#arrow-${d.failed ? 'red' : 'black'})`);
+                .attr('marker-end', d => `url(#arrow-${d.failed ? 'failed' : 'standard'})`)
+                .attr('opacity', 0.7);
             
             // Add link labels
             const linkText = svg.append('g')
                 .selectAll('text')
                 .data(linksArray)
                 .enter().append('text')
-                .attr('x', d => (d.source.x + d.target.x) / 2)
-                .attr('y', d => (d.source.y + d.target.y) / 2 - 10)
                 .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
-                .attr('font-size', '12px')
-                .attr('fill', d => d.failed ? 'red' : 'black')
-                .text(d => {
-                    if (!d.operation) return '';
-                    const opStr = typeof d.operation === 'string' ? d.operation : JSON.stringify(d.operation);
-                    return opStr.length > 30 ? opStr.substring(0, 27) + '...' : opStr;
-                });
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('font-size', '11px')
+                .attr('font-weight', 'normal')
+                .attr('fill', d => d.failed ? colors.failText : colors.text)
+                .attr('pointer-events', 'none')
+                .text(d => d.formattedOperation);
+                
+            // Position link labels along the path
+            linkText.each(function(d) {
+                const textElement = d3.select(this);
+                
+                // Position halfway between nodes, slightly above the path
+                const x = (d.source.x + d.target.x) / 2;
+                const y = (d.source.y + d.target.y) / 2 - 15;
+                
+                textElement.attr('x', x);
+                textElement.attr('y', y);
+                
+                // Add background for better readability
+                const textNode = textElement.node();
+                if (textNode) {
+                    const textWidth = d.formattedOperation.length * 6; // Estimate width
+                    const textHeight = 15; // Estimate height
+                    
+                    svg.insert('rect', 'text')
+                        .attr('x', x - textWidth / 2 - 4)
+                        .attr('y', y - textHeight / 2 - 2)
+                        .attr('width', textWidth + 8)
+                        .attr('height', textHeight + 4)
+                        .attr('rx', 3)
+                        .attr('ry', 3)
+                        .attr('fill', 'white')
+                        .attr('fill-opacity', 0.9);
+                }
+            });
             
-            // Draw nodes
+            // Create node group
             const node = svg.append('g')
                 .selectAll('g')
                 .data(nodesArray)
                 .enter().append('g')
                 .attr('transform', d => `translate(${d.x},${d.y})`);
             
-            // Add circles for nodes
+            // Create node circles
             node.append('circle')
-                .attr('r', 20)
+                .attr('r', nodeRadius)
                 .attr('fill', d => {
-                    if (d.failed) return '#FFCCCC';
-                    if (d.type === 'contract') return '#DDA0DD';
-                    if (d.tokenId && d.tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') return '#CCFFCC';
-                    return '#B3E0FF';
+                    if (d.failed) return colors.failed;
+                    if (d.type === 'contract') return colors.contract;
+                    if (d.tokenId && d.tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') return colors.token;
+                    return colors.account;
                 })
-                .attr('stroke', d => d.failed ? 'red' : '#333')
-                .attr('stroke-width', 2);
+                .attr('stroke', d => d.failed ? colors.failText : colors.nodeStroke)
+                .attr('stroke-width', 1.5);
             
-            /*
-            // Add labels to nodes
-            node.append('text')
-                .attr('dy', 5)
-                .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
-                .attr('font-size', '12px')
-                .text(d => d.shortAddress);
+            // Add node icons
+            node.each(function(d) {
+                const nodeGroup = d3.select(this);
+                
+                // Add icon based on node type
+                if (d.type === 'contract') {
+                    nodeGroup.append('text')
+                        .attr('text-anchor', 'middle')
+                        .attr('dominant-baseline', 'central')
+                        .attr('font-family', 'Arial, sans-serif')
+                        .attr('font-size', '16px')
+                        .attr('fill', colors.text)
+                        .text('⚙️');
+                } else if (d.tokenId && d.tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') {
+                    nodeGroup.append('text')
+                        .attr('text-anchor', 'middle')
+                        .attr('dominant-baseline', 'central')
+                        .attr('font-family', 'Arial, sans-serif')
+                        .attr('font-size', '16px')
+                        .attr('fill', colors.text)
+                        .text('🪙');
+                } else {
+                    nodeGroup.append('text')
+                        .attr('text-anchor', 'middle')
+                        .attr('dominant-baseline', 'central')
+                        .attr('font-family', 'Arial, sans-serif')
+                        .attr('font-size', '16px')
+                        .attr('fill', colors.text)
+                        .text('👤');
+                }
+                
+                // Add error icon for failed nodes
+                if (d.failed) {
+                    nodeGroup.append('text')
+                        .attr('x', 15)
+                        .attr('y', -15)
+                        .attr('text-anchor', 'middle')
+                        .attr('font-family', 'Arial, sans-serif')
+                        .attr('font-size', '14px')
+                        .attr('fill', colors.failText)
+                        .text('❌');
+                }
+            });
             
-            // Add subtitle text for nodes
-            node.append('text')
-                .attr('dy', 25)
-                .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
-                .attr('font-size', '10px')
-                .attr('fill', d => d.failed ? 'red' : 'black')
-                .text(d => {
-                    if (d.failed) return d.failureReason ? d.failureReason.substring(0, 15) : 'Failed';
-                    if (d.tokenId && d.tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') return 'Custom Token';
-                    return d.type === 'contract' ? 'Contract' : 'Account';
-                });
-            */
-            // Add address below the node
+            // Add address labels
             node.append('text')
                 .attr('dy', 40)
                 .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
-                .attr('font-size', '12px')
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('font-size', '11px')
+                .attr('font-weight', 'bold')
+                .attr('fill', colors.text)
                 .text(d => d.shortAddress);
-
-            // Add additional info (failure reason) if needed
-            node.append('text')
+            
+            // Add failure reason if node failed
+            node.filter(d => d.failed && d.failureReason)
+                .append('text')
                 .attr('dy', 55)
                 .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
+                .attr('font-family', 'Arial, sans-serif')
                 .attr('font-size', '10px')
-                .attr('fill', 'red')
-                .text(d => {
-                    if (d.failed && d.failureReason) return d.failureReason.substring(0, 15);
-                    return '';
-                });
+                .attr('fill', colors.failText)
+                .text(d => d.failureReason.length > 20 ? d.failureReason.substring(0, 17) + '...' : d.failureReason);
             
-            // Add legend
-            const legend = svg.append('g')
-                .attr('transform', 'translate(50, 100)');
-            
+            // Create a legend
+            const legendGroup = svg.append('g')
+                .attr('transform', `translate(40, 120)`);
+                
+            legendGroup.append('rect')
+                .attr('width', 150)
+                .attr('height', 130)
+                .attr('fill', 'white')
+                .attr('fill-opacity', 0.8)
+                .attr('rx', 8)
+                .attr('ry', 8)
+                .attr('stroke', '#e2e8f0')
+                .attr('stroke-width', 1);
+                
+            legendGroup.append('text')
+                .attr('x', 10)
+                .attr('y', 20)
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('font-size', '14px')
+                .attr('font-weight', 'bold')
+                .attr('fill', colors.text)
+                .text('Legend');
+                
             const legendItems = [
-                { color: '#B3E0FF', label: 'Account' },
-                { color: '#DDA0DD', label: 'Contract' },
-                { color: '#CCFFCC', label: 'Token Operation' },
-                { color: '#FFCCCC', label: 'Failed Operation' }
+                { color: colors.account, icon: '👤', label: 'Account' },
+                { color: colors.contract, icon: '⚙️', label: 'Contract' },
+                { color: colors.token, icon: '🪙', label: 'Token' },
+                { color: colors.failed, icon: '❌', label: 'Failed' }
             ];
             
             legendItems.forEach((item, i) => {
-                const g = legend.append('g')
-                    .attr('transform', `translate(0, ${i * 25})`);
+                const g = legendGroup.append('g')
+                    .attr('transform', `translate(15, ${i * 25 + 35})`);
                 
-                g.append('rect')
-                    .attr('width', 20)
-                    .attr('height', 20)
+                // Colored circle
+                g.append('circle')
+                    .attr('r', 8)
                     .attr('fill', item.color)
-                    .attr('stroke', '#333')
+                    .attr('stroke', colors.nodeStroke)
                     .attr('stroke-width', 1);
-                
+                    
+                // Icon
                 g.append('text')
-                    .attr('x', 30)
-                    .attr('y', 15)
-                    .attr('font-family', 'Arial')
-                    .attr('font-size', '14px')
+                    .attr('x', 0)
+                    .attr('y', 0)
+                    .attr('text-anchor', 'middle')
+                    .attr('dominant-baseline', 'central')
+                    .attr('font-family', 'Arial, sans-serif')
+                    .attr('font-size', '10px')
+                    .text(item.icon);
+                
+                // Label
+                g.append('text')
+                    .attr('x', 20)
+                    .attr('y', 4)
+                    .attr('font-family', 'Arial, sans-serif')
+                    .attr('font-size', '12px')
+                    .attr('fill', colors.text)
                     .text(item.label);
             });
+            
+            // Add timestamp or metadata
+            svg.append('text')
+                .attr('x', width - 40)
+                .attr('y', height - 20)
+                .attr('text-anchor', 'end')
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('font-size', '11px')
+                .attr('fill', '#94a3b8')
+                .text(`Generated: ${new Date().toLocaleString()}`);
             
             // Save SVG to file
             const svgString = document.body.innerHTML;
