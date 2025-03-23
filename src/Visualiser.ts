@@ -670,62 +670,128 @@ export class AUVisualizer {
     }
 
     private async generateBlockchainFlowSVG(txState: TransactionState, outputPath: string = 'blockchain_flow.svg'): Promise<string> {
+        
+        const estimateTextDimensions = (text: string, fontSize: number) => {
+            const charWidth = fontSize * 0.6;  // Approximate width per character
+            const width = text.length * charWidth;
+            const height = fontSize * 1.2;     // Approximate height based on font size
+            
+            return { 
+                x: -width / 2,  // Center text for text-anchor="middle"
+                y: -height / 2, 
+                width: width, 
+                height: height 
+            };
+        };
+
         try {
-
+            // Build edges if missing
             txState = this.buildEdgesIfMissing(txState);
-
+    
             // Create a virtual DOM for server-side rendering
             const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
             const document = dom.window.document;
             global.document = document;
             
-            // Create SVG container
+            // Define a modern color palette
+            const colors = {
+                background: '#f8fafc',
+                nodeStroke: '#475569',
+                account: '#bfdbfe',  // Light blue
+                contract: '#ddd6fe',  // Light purple
+                token: '#bbf7d0',    // Light green
+                failed: '#fecaca',   // Light red
+                text: '#1e293b',
+                failText: '#dc2626',
+                link: '#94a3b8',
+                linkFailed: '#ef4444',
+                linkHighlight: '#3b82f6'
+            };
+            
+            // Create SVG container with improved dimensions
             const width = 1200;
             const height = 800;
+            const padding = 80; // Padding around visualization area
+            
             const svg = d3.select(document.body)
                 .append('svg')
                 .attr('xmlns', 'http://www.w3.org/2000/svg')
                 .attr('width', width)
                 .attr('height', height)
-                .attr('viewBox', `0 0 ${width} ${height}`);
+                .attr('viewBox', `0 0 ${width} ${height}`)
+                .style('background-color', colors.background);
+                
+            // Add a subtle grid pattern for visual guidance
+            const defs = svg.append('defs');
+            defs.append('pattern')
+                .attr('id', 'grid')
+                .attr('width', 20)
+                .attr('height', 20)
+                .attr('patternUnits', 'userSpaceOnUse')
+                .append('path')
+                .attr('d', 'M 20 0 L 0 0 0 20')
+                .attr('fill', 'none')
+                .attr('stroke', '#e2e8f0')
+                .attr('stroke-width', 0.5);
+                
+            svg.append('rect')
+                .attr('width', width)
+                .attr('height', height)
+                .attr('fill', 'url(#grid)');
             
-            // Add title
+            // Add title with improved styling
             svg.append('text')
                 .attr('x', width / 2)
-                .attr('y', 30)
+                .attr('y', 40)
                 .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
-                .attr('font-size', '20px')
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('font-size', '22px')
                 .attr('font-weight', 'bold')
+                .attr('fill', colors.text)
                 .text(`Transaction Flow: ${txState.blockchainData?.txHash?.substring(0, 16) || 'Unknown'}...`);
             
-            // Add status
-            svg.append('text')
-                .attr('x', width / 2)
-                .attr('y', 60)
+            // Add transaction status with badge-like styling
+            const statusGroup = svg.append('g')
+                .attr('transform', `translate(${width / 2}, 70)`);
+                
+            const status = txState.blockchainData?.status || 'Unknown';
+            const statusColor = status === 'Applied' ? '#22c55e' : 
+                               status === 'Pending' ? '#f59e0b' : 
+                               status === 'Failed' ? '#ef4444' : '#94a3b8';
+                               
+            statusGroup.append('rect')
+                .attr('x', -60)
+                .attr('y', -18)
+                .attr('width', 120)
+                .attr('height', 26)
+                .attr('rx', 13)
+                .attr('ry', 13)
+                .attr('fill', statusColor);
+                
+            statusGroup.append('text')
                 .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
-                .attr('font-size', '16px')
-                .text(`Status: ${txState.blockchainData?.status || 'Unknown'}`);
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('font-size', '14px')
+                .attr('font-weight', 'bold')
+                .attr('fill', 'white')
+                .attr('dy', 5)
+                .text(`Status: ${status}`);
             
-            // Create arrow markers for different relationship types
-            const defs = svg.append('defs');
+            // Create improved arrow markers for different relationship types
             const markers = [
-                { id: 'arrow-black', color: 'black' },
-                { id: 'arrow-red', color: 'red' },
-                { id: 'arrow-green', color: 'green' },
-                { id: 'arrow-blue', color: 'blue' },
-                { id: 'arrow-purple', color: 'purple' }
+                { id: 'arrow-standard', color: colors.link },
+                { id: 'arrow-failed', color: colors.linkFailed },
+                { id: 'arrow-highlight', color: colors.linkHighlight }
             ];
             
             markers.forEach(marker => {
                 defs.append('marker')
                     .attr('id', marker.id)
                     .attr('viewBox', '0 0 10 10')
-                    .attr('refX', 25)
+                    .attr('refX', 27) // Adjusted to position arrow at edge of node
                     .attr('refY', 5)
-                    .attr('markerWidth', 6)
-                    .attr('markerHeight', 6)
+                    .attr('markerWidth', 8)
+                    .attr('markerHeight', 8)
                     .attr('orient', 'auto')
                     .append('path')
                     .attr('d', 'M 0 0 L 10 5 L 0 10 z')
@@ -736,9 +802,6 @@ export class AUVisualizer {
             const nodesArray: any[] = [];
             const nodeMap = new Map();
             
-            // Debug information
-            console.log(`Processing transaction state with ${txState.nodes.size} nodes and ${txState.edges.length} edges`);
-            
             // Process nodes
             txState.nodes.forEach((node, id) => {
                 const publicKey = node.publicKey || '';
@@ -746,17 +809,17 @@ export class AUVisualizer {
                 const shortAddress = publicKey.length > 8 
                     ? `${publicKey.substring(0, 6)}....${publicKey.substring(publicKey.length - 6)}`
                     : publicKey;
+                    
                 const nodeData = {
                     id,
                     label: node.label || 'Unknown',
                     publicKey: node.publicKey,
-                    //shortAddress: node.publicKey.substring(0, 10) + '...',
                     shortAddress: shortAddress,
                     type: node.type,
                     failed: !!node.failed,
                     failureReason: node.failureReason,
                     tokenId: node.tokenId,
-                    // These will be filled in by the simulation
+                    // Will be calculated by force simulation
                     x: undefined,
                     y: undefined
                 };
@@ -765,159 +828,424 @@ export class AUVisualizer {
                 nodeMap.set(id, nodeData);
             });
             
-            // Extract edges
+            // Prepare edges
             const linksArray: any[] = [];
             
             txState.edges.forEach((edge, i) => {
-                // Validate source and target nodes exist
                 if (nodeMap.has(edge.fromNode) && nodeMap.has(edge.toNode)) {
+                    // Create a formatted operation string for the tooltip
+                    let formattedOp = '';
+                    if (edge.operation) {
+                        const opStr = typeof edge.operation === 'string' ? edge.operation : JSON.stringify(edge.operation);
+                        
+                        // Extract useful information from operation string
+                        const matchSequence = opStr.match(/Sequence:\s*([\d]+)/);
+                        const matchType = opStr.match(/Type:\s*([\w]+)/);
+                        const matchStatus = opStr.match(/Status:\s*([\w]+)/);
+                        const matchFee = opStr.match(/Fee:\s*([\d.]+)/);
+                        
+                        if (matchType) {
+                            formattedOp = matchType[1];
+                        } else {
+                            formattedOp = opStr.length > 30 ? opStr.substring(0, 27) + '...' : opStr;
+                        }
+                    }
+                    
                     linksArray.push({
                         id: `edge${i}`,
                         source: nodeMap.get(edge.fromNode),
                         target: nodeMap.get(edge.toNode),
                         operation: edge.operation,
+                        formattedOperation: formattedOp,
                         failed: !!edge.failed
                     });
-                } else {
-                    console.warn(`Edge references non-existent node: ${edge.fromNode} -> ${edge.toNode}`);
                 }
             });
             
-            console.log(`Processed ${nodesArray.length} nodes and ${linksArray.length} links for visualization`);
+            // Use D3's force simulation for better node layout with increased spacing
+            const simulation = d3.forceSimulation(nodesArray)
+                .force('link', d3.forceLink(linksArray).id((d: any) => d.id).distance(200)) // Increased distance between linked nodes
+                .force('charge', d3.forceManyBody().strength(-500)) // Stronger repulsion
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(80)) // Larger collision radius to prevent overlap
+                .force('x', d3.forceX(width / 2).strength(0.05))
+                .force('y', d3.forceY(height / 2).strength(0.05));
+                
+            // Run the simulation for a fixed number of iterations
+            for (let i = 0; i < 300; i++) {
+                simulation.tick();
+            }
             
-            // Set initial positions manually (in a grid layout) instead of using force simulation
-            const gridCols = Math.ceil(Math.sqrt(nodesArray.length));
-            const cellWidth = width / (gridCols + 1);
-            const cellHeight = height / (Math.ceil(nodesArray.length / gridCols) + 1);
-            
-            nodesArray.forEach((node, i) => {
-                const row = Math.floor(i / gridCols);
-                const col = i % gridCols;
-                node.x = (col + 1) * cellWidth;
-                node.y = (row + 1) * cellHeight;
+            // Apply additional spacing adjustments for better distribution
+            // Create a quadtree for efficient nearest-neighbor searching
+            const quadtree = d3.quadtree<any>()
+                .x(d => d.x)
+                .y(d => d.y)
+                .addAll(nodesArray);
+                
+            // Apply repulsion to nodes that are too close
+            nodesArray.forEach(node => {
+                quadtree.visit((quad, x1, y1, x2, y2) => {
+                    if (!quad.length) {
+                        // This is a leaf node with data
+                        const quadData = (quad as d3.QuadtreeLeaf<any>).data;
+                        if (quadData && quadData !== node) {
+                            const dx = node.x - quadData.x;
+                            const dy = node.y - quadData.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            
+                            // If nodes are too close, apply additional repulsion
+                            if (dist < 120) {
+                                const repulsion = (120 - dist) / dist * 0.5;
+                                node.x += dx * repulsion;
+                                node.y += dy * repulsion;
+                            }
+                        }
+                    }
+                    return x1 > node.x + 120 || x2 < node.x - 120 || 
+                           y1 > node.y + 120 || y2 < node.y - 120;
+                });
             });
             
-            // Draw links
+            // Ensure nodes stay within boundaries
+            nodesArray.forEach(node => {
+                node.x = Math.max(padding, Math.min(width - padding, node.x));
+                node.y = Math.max(padding + 100, Math.min(height - padding, node.y));
+            });
+            
+            // Create curved links between nodes
             const link = svg.append('g')
-                .selectAll('line')
+                .selectAll('path')
                 .data(linksArray)
-                .enter().append('line')
-                .attr('x1', d => d.source.x)
-                .attr('y1', d => d.source.y)
-                .attr('x2', d => d.target.x)
-                .attr('y2', d => d.target.y)
-                .attr('stroke', d => d.failed ? 'red' : 'black')
+                .enter().append('path')
+                .attr('d', d => {
+                    // Create curved paths for better visualization of multiple links between same nodes
+                    const dx = d.target.x - d.source.x;
+                    const dy = d.target.y - d.source.y;
+                    const dr = Math.sqrt(dx * dx + dy * dy) * 1.5;
+                    return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
+                })
+                .attr('fill', 'none')
+                .attr('stroke', d => d.failed ? colors.linkFailed : colors.link)
                 .attr('stroke-width', 2)
                 .attr('stroke-dasharray', d => d.failed ? '5,5' : null)
-                .attr('marker-end', d => `url(#arrow-${d.failed ? 'red' : 'black'})`);
-            
-            // Add link labels
-            const linkText = svg.append('g')
-                .selectAll('text')
-                .data(linksArray)
-                .enter().append('text')
-                .attr('x', d => (d.source.x + d.target.x) / 2)
-                .attr('y', d => (d.source.y + d.target.y) / 2 - 10)
-                .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
-                .attr('font-size', '12px')
-                .attr('fill', d => d.failed ? 'red' : 'black')
-                .text(d => {
-                    if (!d.operation) return '';
-                    const opStr = typeof d.operation === 'string' ? d.operation : JSON.stringify(d.operation);
-                    return opStr.length > 30 ? opStr.substring(0, 27) + '...' : opStr;
+                .attr('marker-end', d => `url(#arrow-${d.failed ? 'failed' : 'standard'})`)
+                .attr('opacity', 0.7)
+                // Add interaction effects
+                .on('mouseover', function(event, d) {
+                    d3.select(this)
+                        .attr('stroke', colors.linkHighlight)
+                        .attr('stroke-width', 3)
+                        .attr('opacity', 1)
+                        .attr('marker-end', 'url(#arrow-highlight)');
+                })
+                .on('mouseout', function(event, d) {
+                    d3.select(this)
+                        .attr('stroke', d.failed ? colors.linkFailed : colors.link)
+                        .attr('stroke-width', 2)
+                        .attr('opacity', 0.7)
+                        .attr('marker-end', `url(#arrow-${d.failed ? 'failed' : 'standard'})`);
                 });
             
-            // Draw nodes
+            // Add link labels with improved positioning to prevent overlap
+            const linkText = svg.append('g')
+                .selectAll('g')
+                .data(linksArray)
+                .enter().append('g');
+                
+            // Add background rectangles for better text readability
+            linkText.append('rect')
+                .attr('rx', 4)
+                .attr('ry', 4)
+                .attr('fill', 'white')
+                .attr('fill-opacity', 0.9)
+                .attr('stroke', d => d.failed ? colors.linkFailed : colors.link)
+                .attr('stroke-width', 0.5)
+                .attr('stroke-opacity', 0.7);
+                
+            // Add the text
+            linkText.append('text')
+                .attr('text-anchor', 'middle')
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('font-size', '11px')
+                .attr('font-weight', 'normal')
+                .attr('fill', d => d.failed ? colors.failText : colors.text)
+                .attr('pointer-events', 'none') // Prevent text from interfering with mouse events
+                .text(d => d.formattedOperation);
+                
+            // Position link labels along the curved path and size the background rectangle
+            linkText.each(function(d) {
+                const g = d3.select(this);
+                const text = g.select('text');
+                const textContent = d.formattedOperation || '';
+                
+                // Calculate path mid-point with a slight offset from the line
+                const dx = d.target.x - d.source.x;
+                const dy = d.target.y - d.source.y;
+                const angle = Math.atan2(dy, dx);
+                
+                // Offset perpendicular to the path direction
+                const offsetDistance = 20;
+                const perpX = -Math.sin(angle) * offsetDistance;
+                const perpY = Math.cos(angle) * offsetDistance;
+                
+                // Position at the midpoint of the path with the perpendicular offset
+                const midX = (d.source.x + d.target.x) / 2 + perpX;
+                const midY = (d.source.y + d.target.y) / 2 + perpY;
+                
+                text.attr('x', midX)
+                    .attr('y', midY);
+                    
+                // Get the text dimensions and size the background accordingly
+                // Use type assertion to access getBBox
+                //const textNode = text.node() as SVGTextElement;
+                //const bbox = textNode.getBBox();
+                const bbox = estimateTextDimensions(textContent, 11);
+                const padding = 4;
+                
+                g.select('rect')
+                    .attr('x', bbox.x - padding)
+                    .attr('y', bbox.y - padding)
+                    .attr('width', bbox.width + (padding * 2))
+                    .attr('height', bbox.height + (padding * 2));
+            });
+            
+            // Create node group with improved styling
             const node = svg.append('g')
                 .selectAll('g')
                 .data(nodesArray)
                 .enter().append('g')
-                .attr('transform', d => `translate(${d.x},${d.y})`);
+                .attr('transform', d => `translate(${d.x},${d.y})`)
+                // Add drag behavior (for interactive versions)
+            const dragBehavior = d3.drag<SVGGElement, any>()
+                .on('start', dragstarted)
+                .on('drag', dragged)
+                .on('end', dragended);
+
+            node.call(dragBehavior as any);
             
-            // Add circles for nodes
+            // Add node background with shadow effect
+            defs.append('filter')
+                .attr('id', 'drop-shadow')
+                .attr('height', '130%')
+                .append('feDropShadow')
+                .attr('dx', 0)
+                .attr('dy', 3)
+                .attr('stdDeviation', 3)
+                .attr('flood-color', 'rgba(0, 0, 0, 0.2)');
+                
+            // Create node circles with better styling
             node.append('circle')
-                .attr('r', 20)
+                .attr('r', 25)
                 .attr('fill', d => {
-                    if (d.failed) return '#FFCCCC';
-                    if (d.type === 'contract') return '#DDA0DD';
-                    if (d.tokenId && d.tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') return '#CCFFCC';
-                    return '#B3E0FF';
+                    if (d.failed) return colors.failed;
+                    if (d.type === 'contract') return colors.contract;
+                    if (d.tokenId && d.tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') return colors.token;
+                    return colors.account;
                 })
-                .attr('stroke', d => d.failed ? 'red' : '#333')
-                .attr('stroke-width', 2);
-            
-            /*
-            // Add labels to nodes
-            node.append('text')
-                .attr('dy', 5)
-                .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
-                .attr('font-size', '12px')
-                .text(d => d.shortAddress);
-            
-            // Add subtitle text for nodes
-            node.append('text')
-                .attr('dy', 25)
-                .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
-                .attr('font-size', '10px')
-                .attr('fill', d => d.failed ? 'red' : 'black')
-                .text(d => {
-                    if (d.failed) return d.failureReason ? d.failureReason.substring(0, 15) : 'Failed';
-                    if (d.tokenId && d.tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') return 'Custom Token';
-                    return d.type === 'contract' ? 'Contract' : 'Account';
-                });
-            */
-            // Add address below the node
+                .attr('stroke', d => d.failed ? colors.failText : colors.nodeStroke)
+                .attr('stroke-width', 1.5)
+                .attr('filter', 'url(#drop-shadow)');
+                
+            // Add node type icons based on node type
+            node.each(function(d) {
+                const nodeGroup = d3.select(this);
+                
+                // Add icon based on node type
+                if (d.type === 'contract') {
+                    nodeGroup.append('text')
+                        .attr('text-anchor', 'middle')
+                        .attr('dominant-baseline', 'central')
+                        .attr('font-family', 'Arial, sans-serif')
+                        .attr('font-size', '16px')
+                        .attr('fill', colors.text)
+                        .text('⚙️'); // Gear icon for contract
+                } else if (d.tokenId && d.tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') {
+                    nodeGroup.append('text')
+                        .attr('text-anchor', 'middle')
+                        .attr('dominant-baseline', 'central')
+                        .attr('font-family', 'Arial, sans-serif')
+                        .attr('font-size', '16px')
+                        .attr('fill', colors.text)
+                        .text('🪙'); // Coin icon for token
+                } else {
+                    nodeGroup.append('text')
+                        .attr('text-anchor', 'middle')
+                        .attr('dominant-baseline', 'central')
+                        .attr('font-family', 'Arial, sans-serif')
+                        .attr('font-size', '16px')
+                        .attr('fill', colors.text)
+                        .text('👤'); // Person icon for account
+                }
+                
+                // Add error icon for failed nodes
+                if (d.failed) {
+                    nodeGroup.append('text')
+                        .attr('x', 15)
+                        .attr('y', -15)
+                        .attr('text-anchor', 'middle')
+                        .attr('font-family', 'Arial, sans-serif')
+                        .attr('font-size', '14px')
+                        .attr('fill', colors.failText)
+                        .text('❌');
+                }
+            });
+                
+            // Add address labels with a cleaner design
             node.append('text')
                 .attr('dy', 40)
                 .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
-                .attr('font-size', '12px')
-                .text(d => d.shortAddress);
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('font-size', '11px')
+                .attr('font-weight', 'bold')
+                .attr('fill', colors.text)
+                .text(d => d.shortAddress)
+                // Add a white background for better readability
+                .each(function(d) {
+                    const textElement = d3.select(this);
+                    const parent = textElement.node()?.parentElement;
+                    if (!parent) return;
 
-            // Add additional info (failure reason) if needed
-            node.append('text')
+                    // Get text content for dimensions estimation
+                    const text = d.shortAddress || '';
+                    // Estimate text dimensions instead of using getBBox
+                    const bbox = estimateTextDimensions(text, 11);
+                    const padding = 3;
+                    
+                    d3.select(parent).insert('rect', 'text')
+                        .attr('x', bbox.x - padding)
+                        .attr('y', bbox.y - padding)
+                        .attr('width', bbox.width + (padding * 2))
+                        .attr('height', bbox.height + (padding * 2))
+                        .attr('fill', 'white')
+                        .attr('fill-opacity', 0.7)
+                        .attr('rx', 3)
+                        .attr('ry', 3);
+                });
+    
+            // Add failure reason with improved styling
+            node.filter(d => d.failed && d.failureReason)
+                .append('text')
                 .attr('dy', 55)
                 .attr('text-anchor', 'middle')
-                .attr('font-family', 'Arial')
+                .attr('font-family', 'Arial, sans-serif')
                 .attr('font-size', '10px')
-                .attr('fill', 'red')
-                .text(d => {
-                    if (d.failed && d.failureReason) return d.failureReason.substring(0, 15);
-                    return '';
+                .attr('fill', colors.failText)
+                .text(d => d.failureReason.length > 20 ? d.failureReason.substring(0, 17) + '...' : d.failureReason)
+                // Add a light background for better readability
+                .each(function(d) {
+                    const textElement = d3.select(this);
+                    const parent = textElement.node()?.parentElement;
+                    if (!parent) return;
+
+                    // Use string value for dimensions estimation
+                    const textContent = d.failureReason?.length > 20 
+                        ? d.failureReason.substring(0, 17) + '...' 
+                        : (d.failureReason || '');
+
+                    // Estimate text dimensions
+                    const bbox = estimateTextDimensions(textContent, 10);
+                    const padding = 3;
+                    
+                    d3.select(parent).insert('rect', 'text')
+                        .attr('x', bbox.x - padding)
+                        .attr('y', bbox.y - padding)
+                        .attr('width', bbox.width + (padding * 2))
+                        .attr('height', bbox.height + (padding * 2))
+                        .attr('fill', colors.failed)
+                        .attr('fill-opacity', 0.9)
+                        .attr('rx', 3)
+                        .attr('ry', 3);
                 });
             
-            // Add legend
-            const legend = svg.append('g')
-                .attr('transform', 'translate(50, 100)');
-            
+            // Create a sleek, modern legend
+            const legendGroup = svg.append('g')
+                .attr('transform', `translate(40, 120)`);
+                
+            legendGroup.append('rect')
+                .attr('width', 150)
+                .attr('height', 130)
+                .attr('fill', 'white')
+                .attr('fill-opacity', 0.8)
+                .attr('rx', 8)
+                .attr('ry', 8)
+                .attr('stroke', '#e2e8f0')
+                .attr('stroke-width', 1);
+                
+            legendGroup.append('text')
+                .attr('x', 10)
+                .attr('y', 20)
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('font-size', '14px')
+                .attr('font-weight', 'bold')
+                .attr('fill', colors.text)
+                .text('Legend');
+                
             const legendItems = [
-                { color: '#B3E0FF', label: 'Account' },
-                { color: '#DDA0DD', label: 'Contract' },
-                { color: '#CCFFCC', label: 'Token Operation' },
-                { color: '#FFCCCC', label: 'Failed Operation' }
+                { color: colors.account, icon: '👤', label: 'Account' },
+                { color: colors.contract, icon: '⚙️', label: 'Contract' },
+                { color: colors.token, icon: '🪙', label: 'Token' },
+                { color: colors.failed, icon: '❌', label: 'Failed' }
             ];
             
             legendItems.forEach((item, i) => {
-                const g = legend.append('g')
-                    .attr('transform', `translate(0, ${i * 25})`);
+                const g = legendGroup.append('g')
+                    .attr('transform', `translate(15, ${i * 25 + 35})`);
                 
-                g.append('rect')
-                    .attr('width', 20)
-                    .attr('height', 20)
+                // Colored circle
+                g.append('circle')
+                    .attr('r', 8)
                     .attr('fill', item.color)
-                    .attr('stroke', '#333')
+                    .attr('stroke', colors.nodeStroke)
                     .attr('stroke-width', 1);
-                
+                    
+                // Icon
                 g.append('text')
-                    .attr('x', 30)
-                    .attr('y', 15)
-                    .attr('font-family', 'Arial')
-                    .attr('font-size', '14px')
+                    .attr('x', 0)
+                    .attr('y', 0)
+                    .attr('text-anchor', 'middle')
+                    .attr('dominant-baseline', 'central')
+                    .attr('font-family', 'Arial, sans-serif')
+                    .attr('font-size', '10px')
+                    .text(item.icon);
+                
+                // Label
+                g.append('text')
+                    .attr('x', 20)
+                    .attr('y', 4)
+                    .attr('font-family', 'Arial, sans-serif')
+                    .attr('font-size', '12px')
+                    .attr('fill', colors.text)
                     .text(item.label);
             });
+            
+            // Add timestamp or metadata
+            svg.append('text')
+                .attr('x', width - 40)
+                .attr('y', height - 20)
+                .attr('text-anchor', 'end')
+                .attr('font-family', 'Arial, sans-serif')
+                .attr('font-size', '11px')
+                .attr('fill', '#94a3b8')
+                .text(`Generated: ${new Date().toLocaleString()}`);
+            
+            // Drag event handlers (not active in static SVG, but useful if making interactive)
+            function dragstarted(event: any, d: any) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+            
+            function dragged(event: any, d: any) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+            
+            function dragended(event: any, d: any) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
             
             // Save SVG to file
             const svgString = document.body.innerHTML;
