@@ -670,20 +670,6 @@ export class AUVisualizer {
     }
 
     private async generateBlockchainFlowSVG(txState: TransactionState, outputPath: string = 'blockchain_flow.svg'): Promise<string> {
-        
-        const estimateTextDimensions = (text: string, fontSize: number) => {
-            const charWidth = fontSize * 0.6;  // Approximate width per character
-            const width = text.length * charWidth;
-            const height = fontSize * 1.2;     // Approximate height based on font size
-            
-            return { 
-                x: -width / 2,  // Center text for text-anchor="middle"
-                y: -height / 2, 
-                width: width, 
-                height: height 
-            };
-        };
-
         try {
             // Build edges if missing
             txState = this.buildEdgesIfMissing(txState);
@@ -704,15 +690,12 @@ export class AUVisualizer {
                 text: '#1e293b',
                 failText: '#dc2626',
                 link: '#94a3b8',
-                linkFailed: '#ef4444',
-                linkHighlight: '#3b82f6'
+                linkFailed: '#ef4444'
             };
             
             // Create SVG container with improved dimensions
             const width = 1200;
             const height = 800;
-            const padding = 80; // Padding around visualization area
-            
             const svg = d3.select(document.body)
                 .append('svg')
                 .attr('xmlns', 'http://www.w3.org/2000/svg')
@@ -775,20 +758,19 @@ export class AUVisualizer {
                 .attr('font-weight', 'bold')
                 .attr('fill', 'white')
                 .attr('dy', 5)
-                .text(`Status: ${status}`);
+                .text(`Status: ${status.toLowerCase()}`);
             
-            // Create improved arrow markers for different relationship types
+            // Create arrow markers for different relationship types
             const markers = [
                 { id: 'arrow-standard', color: colors.link },
-                { id: 'arrow-failed', color: colors.linkFailed },
-                { id: 'arrow-highlight', color: colors.linkHighlight }
+                { id: 'arrow-failed', color: colors.linkFailed }
             ];
             
             markers.forEach(marker => {
                 defs.append('marker')
                     .attr('id', marker.id)
                     .attr('viewBox', '0 0 10 10')
-                    .attr('refX', 27) // Adjusted to position arrow at edge of node
+                    .attr('refX', 27)
                     .attr('refY', 5)
                     .attr('markerWidth', 8)
                     .attr('markerHeight', 8)
@@ -819,42 +801,52 @@ export class AUVisualizer {
                     failed: !!node.failed,
                     failureReason: node.failureReason,
                     tokenId: node.tokenId,
-                    // Will be calculated by force simulation
-                    x: undefined,
-                    y: undefined
+                    // For hierarchical layout
+                    children: [],
+                    level: 0,
+                    column: 0,
+                    parents: []
                 };
                 
                 nodesArray.push(nodeData);
                 nodeMap.set(id, nodeData);
             });
             
-            // Prepare edges
+            // Prepare edges and build parent-child relationships
             const linksArray: any[] = [];
             
             txState.edges.forEach((edge, i) => {
                 if (nodeMap.has(edge.fromNode) && nodeMap.has(edge.toNode)) {
-                    // Create a formatted operation string for the tooltip
+                    const source = nodeMap.get(edge.fromNode);
+                    const target = nodeMap.get(edge.toNode);
+                    
+                    // Add child to parent
+                    source.children.push(target);
+                    
+                    // Add parent to child for bidirectional navigation
+                    target.parents.push(source);
+                    
+                    // Create a formatted operation string
                     let formattedOp = '';
                     if (edge.operation) {
                         const opStr = typeof edge.operation === 'string' ? edge.operation : JSON.stringify(edge.operation);
                         
                         // Extract useful information from operation string
-                        const matchSequence = opStr.match(/Sequence:\s*([\d]+)/);
                         const matchType = opStr.match(/Type:\s*([\w]+)/);
-                        const matchStatus = opStr.match(/Status:\s*([\w]+)/);
-                        const matchFee = opStr.match(/Fee:\s*([\d.]+)/);
                         
                         if (matchType) {
                             formattedOp = matchType[1];
+                        } else if (opStr.length > 20) {
+                            formattedOp = opStr.substring(0, 17) + '...';
                         } else {
-                            formattedOp = opStr.length > 30 ? opStr.substring(0, 27) + '...' : opStr;
+                            formattedOp = opStr;
                         }
                     }
                     
                     linksArray.push({
                         id: `edge${i}`,
-                        source: nodeMap.get(edge.fromNode),
-                        target: nodeMap.get(edge.toNode),
+                        source: source,
+                        target: target,
                         operation: edge.operation,
                         formattedOperation: formattedOp,
                         failed: !!edge.failed
@@ -862,181 +854,178 @@ export class AUVisualizer {
                 }
             });
             
-            // Use D3's force simulation for better node layout with increased spacing
-            const simulation = d3.forceSimulation(nodesArray)
-                .force('link', d3.forceLink(linksArray).id((d: any) => d.id).distance(200)) // Increased distance between linked nodes
-                .force('charge', d3.forceManyBody().strength(-500)) // Stronger repulsion
-                .force('center', d3.forceCenter(width / 2, height / 2))
-                .force('collision', d3.forceCollide().radius(80)) // Larger collision radius to prevent overlap
-                .force('x', d3.forceX(width / 2).strength(0.05))
-                .force('y', d3.forceY(height / 2).strength(0.05));
-                
-            // Run the simulation for a fixed number of iterations
-            for (let i = 0; i < 300; i++) {
-                simulation.tick();
+            // Find root nodes (nodes with no parents)
+            const rootNodes = nodesArray.filter(node => node.parents.length === 0);
+            
+            // If no root nodes found, use the first node as root
+            if (rootNodes.length === 0 && nodesArray.length > 0) {
+                rootNodes.push(nodesArray[0]);
             }
             
-            // Apply additional spacing adjustments for better distribution
-            // Create a quadtree for efficient nearest-neighbor searching
-            const quadtree = d3.quadtree<any>()
-                .x(d => d.x)
-                .y(d => d.y)
-                .addAll(nodesArray);
+            // Assign levels to nodes through breadth-first traversal
+            const assignLevels = () => {
+                const visited = new Set();
+                const queue = [...rootNodes];
                 
-            // Apply repulsion to nodes that are too close
-            nodesArray.forEach(node => {
-                quadtree.visit((quad, x1, y1, x2, y2) => {
-                    if (!quad.length) {
-                        // This is a leaf node with data
-                        const quadData = (quad as d3.QuadtreeLeaf<any>).data;
-                        if (quadData && quadData !== node) {
-                            const dx = node.x - quadData.x;
-                            const dy = node.y - quadData.y;
-                            const dist = Math.sqrt(dx * dx + dy * dy);
-                            
-                            // If nodes are too close, apply additional repulsion
-                            if (dist < 120) {
-                                const repulsion = (120 - dist) / dist * 0.5;
-                                node.x += dx * repulsion;
-                                node.y += dy * repulsion;
-                            }
-                        }
-                    }
-                    return x1 > node.x + 120 || x2 < node.x - 120 || 
-                           y1 > node.y + 120 || y2 < node.y - 120;
+                // Set all root nodes to level 0
+                rootNodes.forEach(node => {
+                    node.level = 0;
+                    visited.add(node.id);
                 });
-            });
+                
+                while (queue.length > 0) {
+                    const current = queue.shift();
+                    
+                    // Process all children
+                    current.children.forEach((child: { level: number; id: unknown; }) => {
+                        // Set child's level to parent's level + 1
+                        child.level = Math.max(child.level, current.level + 1);
+                        
+                        // Add to queue if not visited
+                        if (!visited.has(child.id)) {
+                            visited.add(child.id);
+                            queue.push(child);
+                        }
+                    });
+                }
+            };
             
-            // Ensure nodes stay within boundaries
+            // Assign columns to nodes to minimize overlaps
+            const assignColumns = () => {
+                // Group nodes by level
+                const nodesByLevel: any = {};
+                nodesArray.forEach(node => {
+                    if (!nodesByLevel[node.level]) {
+                        nodesByLevel[node.level] = [];
+                    }
+                    nodesByLevel[node.level].push(node);
+                });
+                
+                // Assign columns for each level
+                Object.keys(nodesByLevel).forEach(level => {
+                    const nodesAtLevel = nodesByLevel[level];
+                    nodesAtLevel.forEach((node: any, i: any) => {
+                        node.column = i;
+                    });
+                });
+            };
+            
+            // Apply hierarchical layout algorithm
+            assignLevels();
+            assignColumns();
+            
+            // Calculate node positions based on their level and column
+            const nodeRadius = 25;
+            const horizontalSpacing = 180;  // Space between levels
+            const verticalSpacing = 100;    // Space between nodes at the same level
+            const topMargin = 150;          // Space from top for title and status
+            
+            // Group nodes by level
+            const levelGroups: {[key: string]: any[]} = {};
             nodesArray.forEach(node => {
-                node.x = Math.max(padding, Math.min(width - padding, node.x));
-                node.y = Math.max(padding + 100, Math.min(height - padding, node.y));
+                if (!levelGroups[node.level]) {
+                    levelGroups[node.level] = [];
+                }
+                levelGroups[node.level].push(node);
+            });
+
+            // Find the maximum level and count of nodes in each level
+            const maxLevel = Math.max(...nodesArray.map(node => node.level));
+            const maxNodesInLevel = Math.max(...Object.values(levelGroups).map((group: any[]) => group.length));
+
+            // Calculate horizontal start position to center the diagram
+            const diagramWidth = maxLevel * horizontalSpacing;
+            const horizontalStart = (width - diagramWidth) / 2;
+            
+            // Calculate vertical center positions for each level
+            const levelHeights: any = {};
+            Object.keys(levelGroups).forEach(level => {
+                const nodesCount = levelGroups[level].length;
+                levelHeights[level] = (height - topMargin) / 2 - ((nodesCount - 1) * verticalSpacing) / 2;
             });
             
-            // Create curved links between nodes
+            // Assign coordinates to nodes
+            nodesArray.forEach(node => {
+                const levelHeight = levelHeights[node.level];
+                const nodesAtLevel = levelGroups[node.level];
+                const indexAtLevel = nodesAtLevel.indexOf(node);
+                
+                // Position with horizontal centering
+                node.x = horizontalStart + node.level * horizontalSpacing;
+                node.y = levelHeight + indexAtLevel * verticalSpacing;
+            });
+            
+            // Create links (edges) between nodes
             const link = svg.append('g')
                 .selectAll('path')
                 .data(linksArray)
                 .enter().append('path')
                 .attr('d', d => {
-                    // Create curved paths for better visualization of multiple links between same nodes
-                    const dx = d.target.x - d.source.x;
-                    const dy = d.target.y - d.source.y;
-                    const dr = Math.sqrt(dx * dx + dy * dy) * 1.5;
-                    return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
+                    // Use straight lines with slight curve for hierarchy
+                    return `M${d.source.x + nodeRadius},${d.source.y}
+                            C${d.source.x + horizontalSpacing/2},${d.source.y}
+                             ${d.target.x - horizontalSpacing/2},${d.target.y}
+                             ${d.target.x - nodeRadius},${d.target.y}`;
                 })
                 .attr('fill', 'none')
                 .attr('stroke', d => d.failed ? colors.linkFailed : colors.link)
                 .attr('stroke-width', 2)
                 .attr('stroke-dasharray', d => d.failed ? '5,5' : null)
                 .attr('marker-end', d => `url(#arrow-${d.failed ? 'failed' : 'standard'})`)
-                .attr('opacity', 0.7)
-                // Add interaction effects
-                .on('mouseover', function(event, d) {
-                    d3.select(this)
-                        .attr('stroke', colors.linkHighlight)
-                        .attr('stroke-width', 3)
-                        .attr('opacity', 1)
-                        .attr('marker-end', 'url(#arrow-highlight)');
-                })
-                .on('mouseout', function(event, d) {
-                    d3.select(this)
-                        .attr('stroke', d.failed ? colors.linkFailed : colors.link)
-                        .attr('stroke-width', 2)
-                        .attr('opacity', 0.7)
-                        .attr('marker-end', `url(#arrow-${d.failed ? 'failed' : 'standard'})`);
-                });
+                .attr('opacity', 0.7);
             
-            // Add link labels with improved positioning to prevent overlap
+            // Add link labels
             const linkText = svg.append('g')
-                .selectAll('g')
+                .selectAll('text')
                 .data(linksArray)
-                .enter().append('g');
-                
-            // Add background rectangles for better text readability
-            linkText.append('rect')
-                .attr('rx', 4)
-                .attr('ry', 4)
-                .attr('fill', 'white')
-                .attr('fill-opacity', 0.9)
-                .attr('stroke', d => d.failed ? colors.linkFailed : colors.link)
-                .attr('stroke-width', 0.5)
-                .attr('stroke-opacity', 0.7);
-                
-            // Add the text
-            linkText.append('text')
+                .enter().append('text')
                 .attr('text-anchor', 'middle')
                 .attr('font-family', 'Arial, sans-serif')
                 .attr('font-size', '11px')
                 .attr('font-weight', 'normal')
                 .attr('fill', d => d.failed ? colors.failText : colors.text)
-                .attr('pointer-events', 'none') // Prevent text from interfering with mouse events
+                .attr('pointer-events', 'none')
                 .text(d => d.formattedOperation);
                 
-            // Position link labels along the curved path and size the background rectangle
+            // Position link labels along the path
             linkText.each(function(d) {
-                const g = d3.select(this);
-                const text = g.select('text');
-                const textContent = d.formattedOperation || '';
+                const textElement = d3.select(this);
                 
-                // Calculate path mid-point with a slight offset from the line
-                const dx = d.target.x - d.source.x;
-                const dy = d.target.y - d.source.y;
-                const angle = Math.atan2(dy, dx);
+                // Position halfway between nodes, slightly above the path
+                const x = (d.source.x + d.target.x) / 2;
+                const y = (d.source.y + d.target.y) / 2 - 15;
                 
-                // Offset perpendicular to the path direction
-                const offsetDistance = 20;
-                const perpX = -Math.sin(angle) * offsetDistance;
-                const perpY = Math.cos(angle) * offsetDistance;
+                textElement.attr('x', x);
+                textElement.attr('y', y);
                 
-                // Position at the midpoint of the path with the perpendicular offset
-                const midX = (d.source.x + d.target.x) / 2 + perpX;
-                const midY = (d.source.y + d.target.y) / 2 + perpY;
-                
-                text.attr('x', midX)
-                    .attr('y', midY);
+                // Add background for better readability
+                const textNode = textElement.node();
+                if (textNode) {
+                    const textWidth = d.formattedOperation.length * 6; // Estimate width
+                    const textHeight = 15; // Estimate height
                     
-                // Get the text dimensions and size the background accordingly
-                // Use type assertion to access getBBox
-                //const textNode = text.node() as SVGTextElement;
-                //const bbox = textNode.getBBox();
-                const bbox = estimateTextDimensions(textContent, 11);
-                const padding = 4;
-                
-                g.select('rect')
-                    .attr('x', bbox.x - padding)
-                    .attr('y', bbox.y - padding)
-                    .attr('width', bbox.width + (padding * 2))
-                    .attr('height', bbox.height + (padding * 2));
+                    svg.insert('rect', 'text')
+                        .attr('x', x - textWidth / 2 - 4)
+                        .attr('y', y - textHeight / 2 - 2)
+                        .attr('width', textWidth + 8)
+                        .attr('height', textHeight + 4)
+                        .attr('rx', 3)
+                        .attr('ry', 3)
+                        .attr('fill', 'white')
+                        .attr('fill-opacity', 0.9);
+                }
             });
             
-            // Create node group with improved styling
+            // Create node group
             const node = svg.append('g')
                 .selectAll('g')
                 .data(nodesArray)
                 .enter().append('g')
-                .attr('transform', d => `translate(${d.x},${d.y})`)
-                // Add drag behavior (for interactive versions)
-            const dragBehavior = d3.drag<SVGGElement, any>()
-                .on('start', dragstarted)
-                .on('drag', dragged)
-                .on('end', dragended);
-
-            node.call(dragBehavior as any);
+                .attr('transform', d => `translate(${d.x},${d.y})`);
             
-            // Add node background with shadow effect
-            defs.append('filter')
-                .attr('id', 'drop-shadow')
-                .attr('height', '130%')
-                .append('feDropShadow')
-                .attr('dx', 0)
-                .attr('dy', 3)
-                .attr('stdDeviation', 3)
-                .attr('flood-color', 'rgba(0, 0, 0, 0.2)');
-                
-            // Create node circles with better styling
+            // Create node circles
             node.append('circle')
-                .attr('r', 25)
+                .attr('r', nodeRadius)
                 .attr('fill', d => {
                     if (d.failed) return colors.failed;
                     if (d.type === 'contract') return colors.contract;
@@ -1044,10 +1033,9 @@ export class AUVisualizer {
                     return colors.account;
                 })
                 .attr('stroke', d => d.failed ? colors.failText : colors.nodeStroke)
-                .attr('stroke-width', 1.5)
-                .attr('filter', 'url(#drop-shadow)');
-                
-            // Add node type icons based on node type
+                .attr('stroke-width', 1.5);
+            
+            // Add node icons
             node.each(function(d) {
                 const nodeGroup = d3.select(this);
                 
@@ -1059,7 +1047,7 @@ export class AUVisualizer {
                         .attr('font-family', 'Arial, sans-serif')
                         .attr('font-size', '16px')
                         .attr('fill', colors.text)
-                        .text('⚙️'); // Gear icon for contract
+                        .text('⚙️');
                 } else if (d.tokenId && d.tokenId !== 'wSHV2S4qX9jFsLjQo8r1BsMLH2ZRKsZx6EJd1sbozGPieEC4Jf') {
                     nodeGroup.append('text')
                         .attr('text-anchor', 'middle')
@@ -1067,7 +1055,7 @@ export class AUVisualizer {
                         .attr('font-family', 'Arial, sans-serif')
                         .attr('font-size', '16px')
                         .attr('fill', colors.text)
-                        .text('🪙'); // Coin icon for token
+                        .text('🪙');
                 } else {
                     nodeGroup.append('text')
                         .attr('text-anchor', 'middle')
@@ -1075,7 +1063,7 @@ export class AUVisualizer {
                         .attr('font-family', 'Arial, sans-serif')
                         .attr('font-size', '16px')
                         .attr('fill', colors.text)
-                        .text('👤'); // Person icon for account
+                        .text('👤');
                 }
                 
                 // Add error icon for failed nodes
@@ -1090,8 +1078,8 @@ export class AUVisualizer {
                         .text('❌');
                 }
             });
-                
-            // Add address labels with a cleaner design
+            
+            // Add address labels
             node.append('text')
                 .attr('dy', 40)
                 .attr('text-anchor', 'middle')
@@ -1099,31 +1087,9 @@ export class AUVisualizer {
                 .attr('font-size', '11px')
                 .attr('font-weight', 'bold')
                 .attr('fill', colors.text)
-                .text(d => d.shortAddress)
-                // Add a white background for better readability
-                .each(function(d) {
-                    const textElement = d3.select(this);
-                    const parent = textElement.node()?.parentElement;
-                    if (!parent) return;
-
-                    // Get text content for dimensions estimation
-                    const text = d.shortAddress || '';
-                    // Estimate text dimensions instead of using getBBox
-                    const bbox = estimateTextDimensions(text, 11);
-                    const padding = 3;
-                    
-                    d3.select(parent).insert('rect', 'text')
-                        .attr('x', bbox.x - padding)
-                        .attr('y', bbox.y - padding)
-                        .attr('width', bbox.width + (padding * 2))
-                        .attr('height', bbox.height + (padding * 2))
-                        .attr('fill', 'white')
-                        .attr('fill-opacity', 0.7)
-                        .attr('rx', 3)
-                        .attr('ry', 3);
-                });
-    
-            // Add failure reason with improved styling
+                .text(d => d.shortAddress);
+            
+            // Add failure reason if node failed
             node.filter(d => d.failed && d.failureReason)
                 .append('text')
                 .attr('dy', 55)
@@ -1131,34 +1097,9 @@ export class AUVisualizer {
                 .attr('font-family', 'Arial, sans-serif')
                 .attr('font-size', '10px')
                 .attr('fill', colors.failText)
-                .text(d => d.failureReason.length > 20 ? d.failureReason.substring(0, 17) + '...' : d.failureReason)
-                // Add a light background for better readability
-                .each(function(d) {
-                    const textElement = d3.select(this);
-                    const parent = textElement.node()?.parentElement;
-                    if (!parent) return;
-
-                    // Use string value for dimensions estimation
-                    const textContent = d.failureReason?.length > 20 
-                        ? d.failureReason.substring(0, 17) + '...' 
-                        : (d.failureReason || '');
-
-                    // Estimate text dimensions
-                    const bbox = estimateTextDimensions(textContent, 10);
-                    const padding = 3;
-                    
-                    d3.select(parent).insert('rect', 'text')
-                        .attr('x', bbox.x - padding)
-                        .attr('y', bbox.y - padding)
-                        .attr('width', bbox.width + (padding * 2))
-                        .attr('height', bbox.height + (padding * 2))
-                        .attr('fill', colors.failed)
-                        .attr('fill-opacity', 0.9)
-                        .attr('rx', 3)
-                        .attr('ry', 3);
-                });
+                .text(d => d.failureReason.length > 20 ? d.failureReason.substring(0, 17) + '...' : d.failureReason);
             
-            // Create a sleek, modern legend
+            // Create a legend
             const legendGroup = svg.append('g')
                 .attr('transform', `translate(40, 120)`);
                 
@@ -1228,24 +1169,6 @@ export class AUVisualizer {
                 .attr('font-size', '11px')
                 .attr('fill', '#94a3b8')
                 .text(`Generated: ${new Date().toLocaleString()}`);
-            
-            // Drag event handlers (not active in static SVG, but useful if making interactive)
-            function dragstarted(event: any, d: any) {
-                if (!event.active) simulation.alphaTarget(0.3).restart();
-                d.fx = d.x;
-                d.fy = d.y;
-            }
-            
-            function dragged(event: any, d: any) {
-                d.fx = event.x;
-                d.fy = event.y;
-            }
-            
-            function dragended(event: any, d: any) {
-                if (!event.active) simulation.alphaTarget(0);
-                d.fx = null;
-                d.fy = null;
-            }
             
             // Save SVG to file
             const svgString = document.body.innerHTML;
