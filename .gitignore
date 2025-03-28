@@ -15,4 +15,4 @@ mina-projects-test/
 mina-projects-test/accountUpdates/
 mina-projects-test/mina-fungible-token/
 *.tgz
-# *visualization.png
+*visualization.png
