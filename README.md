@@ -8,6 +8,14 @@ A utility package for tracing and visualizing Mina Protocol account updates and 
 npm install autrace
 ```
 
+### Additional Requirements
+
+`autrace` uses the mermaid cli to generate visualizations.  You can ensure that the cli is available by installing it globally with:
+
+```bash
+npm install -g @mermaid-js/mermaid-cli
+```
+
 ## Features
 
 - `AUTrace`: Track and analyze transaction states and account updates in Mina Protocol
@@ -52,7 +60,7 @@ const txn = await Mina.transaction(deployerAccount, async () => {
 });
 
 // Track different transaction states like so:
-const sendState = autrace.getTransactionState(await txn.send());
+const sendState = autrace.getTransactionState(txn.toJSON());
 
 ```
 
