@@ -136,6 +136,7 @@ This will generate a `transaction_visualization.png` with the visualisation like
 
 ### Important Notes
 
+- This package depends on o1js 3.x, the release line for the Mesa hard fork (32 on-chain state fields per account). Use it with zkApps built on o1js 3.x; o1js 3 requires Node.js >= 22.19.5.
 - This package uses ES modules. Ensure your project's package.json has `"type": "module"`.
 - TypeScript projects should have appropriate module settings in tsconfig.json.
 

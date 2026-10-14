@@ -119,8 +119,10 @@ export class AccountUpdateAnalyzer {
         const changes: any = [];
         
         if (au.body?.update?.appState) {
+            // Every account update carries all appState slots (32 since Mesa, 8 before),
+            // each as { isSome, value }; only report the slots this update actually sets.
             au.body.update.appState.forEach((state, index) => {
-                if (state) {
+                if (state.isSome.toBoolean()) {
                     changes.push({
                         field: `appState[${index}]`,
                         value: state
